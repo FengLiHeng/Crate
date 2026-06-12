@@ -1,0 +1,48 @@
+/* ─────────────────────────────────────────────
+   Design Tokens — 本地音乐播放器
+   单一真源:播放器与 Design Tokens 页共用
+   基调:干净中性基底 + 单一珊瑚红强调色(无渐变)
+   内容(封面)供色,界面留白 — 60/30/10
+   ───────────────────────────────────────────── */
+
+:root, [data-theme="light"] {
+  --desktop: linear-gradient(165deg, oklch(0.9 0.05 60), oklch(0.72 0.07 265));
+  --win-bg: oklch(0.99 0.002 80);
+  --sidebar-bg: oklch(0.966 0.004 80);
+  --panel-bg: oklch(0.975 0.003 80);
+  --playbar-bg: oklch(0.978 0.003 80);
+  --menu-bg: oklch(0.975 0.003 80 / 0.92);
+  --text: oklch(0.21 0.005 80);
+  --text-2: oklch(0.47 0.008 80);
+  --text-3: oklch(0.62 0.008 80);
+  --sep: oklch(0.25 0.01 80 / 0.1);
+  --hover: oklch(0.3 0.01 80 / 0.05);
+  --selected: oklch(0.3 0.02 80 / 0.09);
+  --ctrl: oklch(0.3 0.01 80 / 0.06);
+  --accent: oklch(0.6 0.19 30);
+  --accent-fg: #fff;
+  --accent-soft: oklch(0.6 0.19 30 / 0.11);
+  --win-shadow: 0 24px 70px oklch(0 0 0 / 0.35), 0 0 0 0.5px oklch(0 0 0 / 0.22), inset 0 0.5px 0 oklch(1 0 0 / 0.6);
+  --thumb: #fff;
+}
+
+[data-theme="dark"] {
+  --desktop: linear-gradient(165deg, oklch(0.34 0.05 265), oklch(0.17 0.03 290));
+  --win-bg: oklch(0.215 0.005 270);
+  --sidebar-bg: oklch(0.25 0.006 270);
+  --panel-bg: oklch(0.24 0.006 270);
+  --playbar-bg: oklch(0.235 0.006 270);
+  --menu-bg: oklch(0.29 0.007 270 / 0.94);
+  --text: oklch(0.94 0.003 80);
+  --text-2: oklch(0.72 0.005 80);
+  --text-3: oklch(0.56 0.005 80);
+  --sep: oklch(0.95 0.01 80 / 0.09);
+  --hover: oklch(0.9 0.01 80 / 0.06);
+  --selected: oklch(0.9 0.01 80 / 0.1);
+  --ctrl: oklch(0.9 0.01 80 / 0.08);
+  --accent: oklch(0.67 0.18 30);
+  --accent-fg: #fff;
+  --accent-soft: oklch(0.67 0.18 30 / 0.16);
+  --win-shadow: 0 28px 80px oklch(0 0 0 / 0.55), 0 0 0 0.5px oklch(1 0 0 / 0.12), inset 0 0.5px 0 oklch(1 0 0 / 0.1);
+  --thumb: oklch(0.92 0.003 80);
+}
