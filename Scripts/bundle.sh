@@ -7,10 +7,26 @@ swift build -c release --arch arm64
 
 APP="build/Crate.app"
 BIN=".build/arm64-apple-macosx/release/Crate"
+ICONSET="/tmp/crate-appicon.iconset"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Crate"
+
+rm -rf "$ICONSET"
+mkdir -p "$ICONSET"
+cp src/Assets.xcassets/AppIcon.appiconset/icon_16x16.png "$ICONSET/icon_16x16.png"
+cp src/Assets.xcassets/AppIcon.appiconset/icon_16x16@2x.png "$ICONSET/icon_16x16@2x.png"
+cp src/Assets.xcassets/AppIcon.appiconset/icon_32x32.png "$ICONSET/icon_32x32.png"
+cp src/Assets.xcassets/AppIcon.appiconset/icon_32x32@2x.png "$ICONSET/icon_32x32@2x.png"
+cp src/Assets.xcassets/AppIcon.appiconset/icon_128x128.png "$ICONSET/icon_128x128.png"
+cp src/Assets.xcassets/AppIcon.appiconset/icon_128x128@2x.png "$ICONSET/icon_128x128@2x.png"
+cp src/Assets.xcassets/AppIcon.appiconset/icon_256x256.png "$ICONSET/icon_256x256.png"
+cp src/Assets.xcassets/AppIcon.appiconset/icon_256x256@2x.png "$ICONSET/icon_256x256@2x.png"
+cp src/Assets.xcassets/AppIcon.appiconset/icon_512x512.png "$ICONSET/icon_512x512.png"
+cp src/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png "$ICONSET/icon_512x512@2x.png"
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+rm -rf "$ICONSET"
 
 cat > "$APP/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -25,6 +41,8 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <string>本地音乐播放器</string>
     <key>CFBundleDisplayName</key>
     <string>本地音乐播放器</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -45,4 +63,4 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 </plist>
 EOF
 
-echo "已生成 $APP（arm64）"
+echo "已生成 ${APP}（arm64）"

@@ -25,7 +25,7 @@ struct SongTableView: View {
             if songs.isEmpty {
                 EmptyHint(
                     text: app.search.isEmpty
-                        ? "资料库是空的，拖入音频文件或点击 + 导入"
+                        ? emptyText
                         : "没有与「\(app.search)」匹配的结果"
                 )
             } else {
@@ -46,6 +46,12 @@ struct SongTableView: View {
                 }
             }
         }
+    }
+
+    private var emptyText: String {
+        app.viewPlaylist == nil
+            ? "资料库是空的，拖入音频文件或点击 + 导入"
+            : "该分组暂无歌曲\n在歌曲上右键选择「添加到分组」"
     }
 }
 
@@ -179,9 +185,14 @@ private struct SongContextMenu: View {
         Button("下一首播放") { app.player.playNextSong(song) }
         Button("添加到待播清单") { app.player.addToQueue(song) }
         Divider()
-        Menu("添加到播放列表") {
-            ForEach(app.playlists) { pl in
-                Button(pl.name) { app.addSong(song, to: pl) }
+        Menu("添加到分组") {
+            if app.playlists.isEmpty {
+                Button("暂无分组") {}
+                    .disabled(true)
+            } else {
+                ForEach(app.playlists) { pl in
+                    Button(pl.name) { app.addSong(song, to: pl) }
+                }
             }
         }
         Divider()

@@ -25,7 +25,7 @@ private struct ContentHeader: View {
 
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 16) {
-                // 标题区（歌单视图带封面）
+                // 标题区（分组视图带封面）
                 HStack(spacing: 14) {
                     if let pl = app.viewPlaylist {
                         PlaylistCoverView(

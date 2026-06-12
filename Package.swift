@@ -7,7 +7,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Crate",
-            path: "src"
+            path: "src",
+            resources: [
+                .process("Assets.xcassets")
+            ]
         )
     ]
 )

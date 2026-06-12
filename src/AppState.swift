@@ -12,6 +12,10 @@ enum RepeatMode: String {
     case off, all, one
 }
 
+enum GroupNameValidation {
+    static let maxLength = 24
+}
+
 @Observable
 final class AppState {
     // ── 主题（持久化键与设计稿 localStorage 对齐） ──
@@ -158,9 +162,80 @@ final class AppState {
 
     // ── 曲库操作（player-app.jsx handleMenuAction） ──
 
+    private func normalizedGroupName(_ rawName: String) -> String {
+        rawName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+    }
+
+    func groupNameError(_ rawName: String, excluding groupId: String? = nil) -> String? {
+        let name = normalizedGroupName(rawName)
+        if name.isEmpty { return "请输入分组名称" }
+        if name.count > GroupNameValidation.maxLength { return "分组名称不能超过 \(GroupNameValidation.maxLength) 个字符" }
+        if playlists.contains(where: { $0.id != groupId && $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            return "已存在同名分组"
+        }
+
+        var hasLetterOrNumber = false
+        let allowedSymbols = Set("-_·&+#()（）")
+        for ch in name {
+            if ch.isLetter || ch.isNumber {
+                hasLetterOrNumber = true
+                continue
+            }
+            if ch == " " || allowedSymbols.contains(ch) { continue }
+            return "名称只能包含中英文、数字、空格和常用连接符"
+        }
+        return hasLetterOrNumber ? nil : "名称不能全是符号"
+    }
+
+    @discardableResult
+    func createGroup(named rawName: String) -> Playlist? {
+        guard groupNameError(rawName) == nil else { return nil }
+        let name = normalizedGroupName(rawName)
+        let group = Playlist(id: "grp-" + UUID().uuidString, name: name, songIds: [])
+        playlists.append(group)
+        view = .playlist(group.id)
+        showToast("已创建分组「\(name)」")
+        return group
+    }
+
+    func renameGroup(_ groupId: String, to rawName: String) -> Bool {
+        guard groupNameError(rawName, excluding: groupId) == nil else { return false }
+        let name = normalizedGroupName(rawName)
+        var renamed = false
+        playlists = playlists.map { group in
+            var group = group
+            if group.id == groupId {
+                group.name = name
+                renamed = true
+            }
+            return group
+        }
+        if renamed { showToast("已重命名为「\(name)」") }
+        return renamed
+    }
+
+    func deleteGroup(_ groupId: String) {
+        guard let group = playlists.first(where: { $0.id == groupId }) else { return }
+        playlists.removeAll { $0.id == groupId }
+        if case .playlist(let id) = view, id == groupId {
+            view = .library
+        }
+        showToast("已删除分组「\(group.name)」")
+    }
+
+    func moveGroup(_ groupId: String, to destinationIndex: Int) {
+        guard let sourceIndex = playlists.firstIndex(where: { $0.id == groupId }) else { return }
+        let moved = playlists.remove(at: sourceIndex)
+        let safeIndex = Swift.min(Swift.max(destinationIndex, 0), playlists.count)
+        playlists.insert(moved, at: safeIndex)
+    }
+
     func addSong(_ song: Song, to playlist: Playlist) {
         if playlist.songIds.contains(song.id) {
-            showToast("「\(song.title)」已在「\(playlist.name)」中")
+            showToast("「\(song.title)」已在分组「\(playlist.name)」中")
             return
         }
         playlists = playlists.map { p in
@@ -168,7 +243,7 @@ final class AppState {
             if p.id == playlist.id { p.songIds.append(song.id) }
             return p
         }
-        showToast("已添加到「\(playlist.name)」")
+        showToast("已添加到分组「\(playlist.name)」")
     }
 
     func removeSong(_ song: Song) {
@@ -218,7 +293,7 @@ final class AppState {
         showToast(fixed > 1 ? "已重新定位 \(fixed) 首曲目" : "已重新定位「\(song.title)」")
     }
 
-    /// 一键移除所有失效曲目，同步歌单与播放上下文（spec: track-availability）
+    /// 一键移除所有失效曲目，同步分组与播放上下文（spec: track-availability）
     func cleanupMissing() {
         let ids = missingIds
         guard !ids.isEmpty else { return }

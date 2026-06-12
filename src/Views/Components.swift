@@ -36,7 +36,7 @@ struct CoverView: View {
     }
 }
 
-// MARK: - 歌单马赛克封面（最多 4 格，player-ui.jsx PlaylistCover）
+// MARK: - 分组马赛克封面（最多 4 格，player-ui.jsx PlaylistCover）
 
 struct PlaylistCoverView: View {
     var playlist: Playlist
