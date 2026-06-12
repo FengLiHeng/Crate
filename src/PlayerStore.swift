@@ -1,6 +1,12 @@
 import Foundation
 import Observation
 
+/// 跳过失效曲目时的寻找方向（design.md D3）
+enum SkipDirection {
+    case forward   // 下一首 / 自动切歌 / 从列表播放：向后找可用曲目
+    case backward  // 上一首：向前找可用曲目
+}
+
 // 播放状态机（design.md D4），语义严格移植 docs/设计材料/player-app.jsx：
 // 播放上下文 ctx + 插播队列 manualQueue，插播结束后回到上下文继续。
 @Observable
@@ -30,11 +36,15 @@ final class PlayerStore {
     // 由 AppState 注入
     @ObservationIgnored var songProvider: (String) -> Song? = { _ in nil }
     @ObservationIgnored var onToast: (String) -> Void = { _ in }
+    /// 播放撞到文件缺失/无法解码时回调，供 AppState 即时标记失效（design.md D2）
+    @ObservationIgnored var onMissing: (String) -> Void = { _ in }
 
     @ObservationIgnored private var engine: PlaybackEngine?
     @ObservationIgnored private var progressTimer: Timer?
-    /// 连续"文件不可用"跳过计数，防止全部缺失 + 列表循环时无限跳过
-    @ObservationIgnored private var consecutiveSkips = 0
+    /// 本轮跳过已尝试过的曲目 id；候选再次出现说明绕了一圈，全库不可播（design.md D4）
+    @ObservationIgnored private var skipVisited: Set<String> = []
+    /// 播放代次：异步构造引擎期间用户若已切歌，旧构造结果按代次作废（design.md D5）
+    @ObservationIgnored private var playToken = 0
 
     init() {
         let saved = UserDefaults.standard.object(forKey: "lmp-volume") as? Double
@@ -54,6 +64,7 @@ final class PlayerStore {
     func playFrom(_ list: [Song], index: Int, forceShuffle: Bool = false) {
         let ids = list.map(\.id)
         guard !ids.isEmpty else { return }
+        skipVisited.removeAll()
         let useShuffle = forceShuffle || shuffle
         if forceShuffle && !shuffle { shuffle = true }
         var ordered = ids
@@ -70,6 +81,7 @@ final class PlayerStore {
 
     /// 立即播放单曲：作为插播，不打乱原上下文（playSongNow）
     func playSongNow(_ song: Song) {
+        skipVisited.removeAll()
         isManual = true
         startPlaying(id: song.id)
     }
@@ -105,12 +117,18 @@ final class PlayerStore {
             seek(to: 0)
             return
         }
+        stepBackward()
+    }
+
+    /// 退回上下文前一首；撞到失效曲目时由 handleUnplayable(.backward) 继续向前找（design.md D3）
+    private func stepBackward() {
         if ctx.pos > 0 {
             ctx.pos -= 1
             isManual = false
-            startPlaying(id: ctx.ids[ctx.pos])
+            startPlaying(id: ctx.ids[ctx.pos], skipOnMissing: .backward)
         } else {
-            seek(to: 0)
+            // 已在第一首，前面再无可用曲目：停在当前曲首
+            if currentId != nil { seek(to: 0) } else { stopPlayback() }
         }
     }
 
@@ -217,42 +235,71 @@ final class PlayerStore {
 
     // MARK: - 内部：引擎与进度
 
-    private func startPlaying(id: String) {
+    private func startPlaying(id: String, skipOnMissing: SkipDirection = .forward) {
         guard let song = songProvider(id) else { return }
         engine?.stop()
         engine = nil
         progress = 0
         currentId = id
+        playToken += 1
+        let token = playToken
 
         if let url = song.fileURL {
-            // 真实文件：文件缺失或不可解码时降级跳下一首
-            guard FileManager.default.fileExists(atPath: url.path),
-                  let e = try? AVAudioPlayerEngine(url: url, volume: volume) else {
-                consecutiveSkips += 1
-                // 整个队列+上下文都不可播时停止，避免列表循环下无限跳过
-                if consecutiveSkips >= ctx.ids.count + manualQueue.count + 1 {
-                    onToast("没有可播放的曲目")
-                    stopPlayback()
-                    return
-                }
-                onToast("「\(song.title)」的文件不可用，已跳过")
-                isPlaying = false
-                DispatchQueue.main.async { [weak self] in self?.next() }
+            // 真实文件：文件不存在直接按方向跳过
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                handleUnplayable(song: song, direction: skipOnMissing)
                 return
             }
-            engine = e
+            // 构造解码引擎放到后台，避免大文件/网络卷阻塞 UI（design.md D5）
+            isPlaying = false
+            let vol = volume
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let made = try? AVAudioPlayerEngine(url: url, volume: vol)
+                DispatchQueue.main.async {
+                    guard let self, self.playToken == token else { return } // 用户已切歌，作废
+                    guard let e = made else {
+                        self.handleUnplayable(song: song, direction: skipOnMissing)
+                        return
+                    }
+                    self.attachAndPlay(e)
+                }
+            }
         } else {
-            // 示例曲目：模拟进度
-            engine = SimulatedEngine(duration: song.duration)
+            // 示例曲目：模拟进度，无 IO，直接接管
+            attachAndPlay(SimulatedEngine(duration: song.duration))
         }
-        consecutiveSkips = 0
+    }
 
-        engine?.onFinished = { [weak self] in
-            self?.handleFinished()
-        }
-        engine?.play()
+    /// 成功取得引擎后接管播放，并清空本轮跳过记录
+    private func attachAndPlay(_ e: PlaybackEngine) {
+        skipVisited.removeAll()
+        engine = e
+        e.onFinished = { [weak self] in self?.handleFinished() }
+        e.play()
         isPlaying = true
         startProgressTimer()
+    }
+
+    /// 文件缺失或无法解码：标记失效、提示并按方向继续寻找可用曲目；绕回一圈则停止（design.md D3/D4）
+    private func handleUnplayable(song: Song, direction: SkipDirection) {
+        onMissing(song.id)
+        isPlaying = false
+        if skipVisited.contains(song.id) {
+            // 候选重复出现，全库不可播
+            skipVisited.removeAll()
+            onToast("没有可播放的曲目")
+            stopPlayback()
+            return
+        }
+        skipVisited.insert(song.id)
+        onToast("「\(song.title)」的文件不可用，已跳过")
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            switch direction {
+            case .forward: self.next()
+            case .backward: self.stepBackward()
+            }
+        }
     }
 
     private func handleFinished() {

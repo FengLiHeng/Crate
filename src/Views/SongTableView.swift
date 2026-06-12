@@ -85,6 +85,7 @@ private struct SongRow: View {
 
     private var isCurrent: Bool { song.id == app.player.currentId }
     private var isSelected: Bool { song.id == app.selectedId }
+    private var isMissing: Bool { app.missingIds.contains(song.id) }
 
     var body: some View {
         let album = song.albumId.flatMap { app.albumsById[$0] }
@@ -117,6 +118,12 @@ private struct SongRow: View {
                     .font(.system(size: 13.5, weight: .medium))
                     .foregroundStyle(isCurrent ? app.tokens.accent : app.tokens.text)
                     .lineLimit(1)
+                if isMissing {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(app.tokens.text3)
+                        .help("文件不可用，可重新定位或清理")
+                }
                 Spacer(minLength: 0)
             }
             .frame(width: cols.title, alignment: .leading)
@@ -146,6 +153,7 @@ private struct SongRow: View {
             .frame(width: 40)
             .opacity(hovering || isSelected ? 1 : 0)
         }
+        .opacity(isMissing ? 0.45 : 1)   // 失效曲目置灰（背景层在 .background 中保持原样）
         .padding(.horizontal, 8)
         .frame(height: 52)
         .background(
@@ -177,6 +185,9 @@ private struct SongContextMenu: View {
             }
         }
         Divider()
+        if app.missingIds.contains(song.id) {
+            Button("重新定位…") { app.relocate(song) }
+        }
         Button("在 Finder 中显示") { app.revealInFinder(song) }
         Button("从资料库中删除", role: .destructive) { app.removeSong(song) }
     }

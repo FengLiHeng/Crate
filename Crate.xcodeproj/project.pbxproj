@@ -1,0 +1,304 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		BF0000000000000000000001 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000001 /* AppState.swift */; };
+		BF0000000000000000000002 /* CrateApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000002 /* CrateApp.swift */; };
+		BF0000000000000000000003 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000003 /* Models.swift */; };
+		BF0000000000000000000004 /* PlaybackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000004 /* PlaybackEngine.swift */; };
+		BF0000000000000000000005 /* PlayerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000005 /* PlayerStore.swift */; };
+		BF0000000000000000000006 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000006 /* SampleData.swift */; };
+		BF0000000000000000000007 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000007 /* Theme.swift */; };
+		BF0000000000000000000008 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000008 /* Components.swift */; };
+		BF0000000000000000000009 /* LibraryContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000009 /* LibraryContentView.swift */; };
+		BF0000000000000000000010 /* PlayBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000010 /* PlayBarView.swift */; };
+		BF0000000000000000000011 /* QueuePanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000011 /* QueuePanelView.swift */; };
+		BF0000000000000000000012 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000012 /* RootView.swift */; };
+		BF0000000000000000000013 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000013 /* SidebarView.swift */; };
+		BF0000000000000000000014 /* SongTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000014 /* SongTableView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		BD0000000000000000000001 /* Crate.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Crate.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FA0000000000000000000001 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		FA0000000000000000000002 /* CrateApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrateApp.swift; sourceTree = "<group>"; };
+		FA0000000000000000000003 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		FA0000000000000000000004 /* PlaybackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackEngine.swift; sourceTree = "<group>"; };
+		FA0000000000000000000005 /* PlayerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerStore.swift; sourceTree = "<group>"; };
+		FA0000000000000000000006 /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
+		FA0000000000000000000007 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		FA0000000000000000000008 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		FA0000000000000000000009 /* LibraryContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryContentView.swift; sourceTree = "<group>"; };
+		FA0000000000000000000010 /* PlayBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayBarView.swift; sourceTree = "<group>"; };
+		FA0000000000000000000011 /* QueuePanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuePanelView.swift; sourceTree = "<group>"; };
+		FA0000000000000000000012 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		FA0000000000000000000013 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		FA0000000000000000000014 /* SongTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongTableView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		BB0000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AB0000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				AD0000000000000000000001 /* src */,
+				AC0000000000000000000001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AC0000000000000000000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BD0000000000000000000001 /* Crate.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		AD0000000000000000000001 /* src */ = {
+			isa = PBXGroup;
+			children = (
+				FA0000000000000000000002 /* CrateApp.swift */,
+				FA0000000000000000000001 /* AppState.swift */,
+				FA0000000000000000000005 /* PlayerStore.swift */,
+				FA0000000000000000000004 /* PlaybackEngine.swift */,
+				FA0000000000000000000003 /* Models.swift */,
+				FA0000000000000000000006 /* SampleData.swift */,
+				FA0000000000000000000007 /* Theme.swift */,
+				AE0000000000000000000001 /* Views */,
+			);
+			path = src;
+			sourceTree = "<group>";
+		};
+		AE0000000000000000000001 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				FA0000000000000000000012 /* RootView.swift */,
+				FA0000000000000000000009 /* LibraryContentView.swift */,
+				FA0000000000000000000014 /* SongTableView.swift */,
+				FA0000000000000000000013 /* SidebarView.swift */,
+				FA0000000000000000000010 /* PlayBarView.swift */,
+				FA0000000000000000000011 /* QueuePanelView.swift */,
+				FA0000000000000000000008 /* Components.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AF0000000000000000000001 /* Crate */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CB0000000000000000000001 /* Build configuration list for PBXNativeTarget "Crate" */;
+			buildPhases = (
+				BA0000000000000000000001 /* Sources */,
+				BB0000000000000000000001 /* Frameworks */,
+				BC0000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Crate;
+			productName = Crate;
+			productReference = BD0000000000000000000001 /* Crate.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA0000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					AF0000000000000000000001 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+				};
+			};
+			buildConfigurationList = CA0000000000000000000001 /* Build configuration list for PBXProject "Crate" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = AB0000000000000000000001;
+			productRefGroup = AC0000000000000000000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AF0000000000000000000001 /* Crate */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		BC0000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		BA0000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF0000000000000000000002 /* CrateApp.swift in Sources */,
+				BF0000000000000000000001 /* AppState.swift in Sources */,
+				BF0000000000000000000005 /* PlayerStore.swift in Sources */,
+				BF0000000000000000000004 /* PlaybackEngine.swift in Sources */,
+				BF0000000000000000000003 /* Models.swift in Sources */,
+				BF0000000000000000000006 /* SampleData.swift in Sources */,
+				BF0000000000000000000007 /* Theme.swift in Sources */,
+				BF0000000000000000000012 /* RootView.swift in Sources */,
+				BF0000000000000000000009 /* LibraryContentView.swift in Sources */,
+				BF0000000000000000000014 /* SongTableView.swift in Sources */,
+				BF0000000000000000000013 /* SidebarView.swift in Sources */,
+				BF0000000000000000000010 /* PlayBarView.swift in Sources */,
+				BF0000000000000000000011 /* QueuePanelView.swift in Sources */,
+				BF0000000000000000000008 /* Components.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		CC0000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		CC0000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		CD0000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "本地音乐播放器";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.crate.player;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		CD0000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "本地音乐播放器";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.crate.player;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		CA0000000000000000000001 /* Build configuration list for PBXProject "Crate" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CC0000000000000000000001 /* Debug */,
+				CC0000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CB0000000000000000000001 /* Build configuration list for PBXNativeTarget "Crate" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CD0000000000000000000001 /* Debug */,
+				CD0000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = AA0000000000000000000001 /* Project object */;
+}

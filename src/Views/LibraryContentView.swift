@@ -51,6 +51,11 @@ private struct ContentHeader: View {
                 // 工具组：搜索 / 导入 / 主题
                 HStack(spacing: 8) {
                     SearchField(text: $app.search)
+                    if !app.missingIds.isEmpty {
+                        ToolButton(systemName: "exclamationmark.triangle", help: "清理失效曲目") {
+                            app.cleanupMissing()
+                        }
+                    }
                     ToolButton(systemName: "plus", help: "导入音乐文件") {
                         app.importViaPanel()
                     }

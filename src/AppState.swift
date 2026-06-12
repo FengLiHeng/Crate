@@ -47,6 +47,9 @@ final class AppState {
     var toast: String?
     var dragOver = false
 
+    // ── 失效曲目（运行时派生，不持久化；design.md D1） ──
+    var missingIds: Set<String> = []
+
     // ── 播放 ──
     let player = PlayerStore()
 
@@ -74,7 +77,32 @@ final class AppState {
 
         player.songProvider = { [weak self] id in self?.songsById[id] }
         player.onToast = { [weak self] msg in self?.showToast(msg) }
+        player.onMissing = { [weak self] id in self?.markMissing(id) }
+
+        // 启动后台批量探测失效曲目（design.md D2）
+        probeAvailability()
     }
+
+    // ── 失效曲目探测/标记（spec: track-availability，design.md D1/D2） ──
+
+    /// 后台遍历曲库，标记文件已不存在的导入曲目；拔/插盘后重启重扫即自洽
+    func probeAvailability() {
+        let snapshot: [(String, String)] = library.compactMap { song in
+            song.fileURL.map { (song.id, $0.path) }
+        }
+        Task.detached(priority: .utility) { [weak self] in
+            var missing: Set<String> = []
+            for (id, path) in snapshot where !FileManager.default.fileExists(atPath: path) {
+                missing.insert(id)
+            }
+            await self?.applyMissing(missing)
+        }
+    }
+
+    @MainActor private func applyMissing(_ ids: Set<String>) { missingIds = ids }
+
+    func markMissing(_ id: String) { missingIds.insert(id) }
+    func clearMissing(_ id: String) { missingIds.remove(id) }
 
     // ── 当前视图歌曲（含搜索过滤，对应 player-app.jsx viewSongs） ──
     var viewPlaylist: Playlist? {
@@ -152,6 +180,58 @@ final class AppState {
         }
         player.handleSongRemoved(song.id)
         showToast("已从资料库中删除「\(song.title)」")
+    }
+
+    /// 为失效曲目重新定位文件，并自动批量修复同一旧目录下的其他失效曲目（spec: track-availability，design.md D6）
+    func relocate(_ song: Song) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.audio]
+        panel.prompt = "重新定位"
+        guard panel.runModal() == .OK, let newURL = panel.urls.first else { return }
+        guard let oldURL = song.fileURL else { return }
+
+        let oldDir = oldURL.deletingLastPathComponent().standardizedFileURL.path
+        let newDir = newURL.deletingLastPathComponent()
+        var updated = library
+        var fixed = 0
+        for i in updated.indices {
+            let s = updated[i]
+            if s.id == song.id {
+                updated[i].fileURL = newURL
+                clearMissing(s.id)
+                fixed += 1
+                continue
+            }
+            // 仅修复同一旧目录、且新目录下存在同名文件的其他失效曲目
+            guard missingIds.contains(s.id), let sURL = s.fileURL,
+                  sURL.deletingLastPathComponent().standardizedFileURL.path == oldDir else { continue }
+            let candidate = newDir.appendingPathComponent(sURL.lastPathComponent)
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                updated[i].fileURL = candidate
+                clearMissing(s.id)
+                fixed += 1
+            }
+        }
+        library = updated
+        showToast(fixed > 1 ? "已重新定位 \(fixed) 首曲目" : "已重新定位「\(song.title)」")
+    }
+
+    /// 一键移除所有失效曲目，同步歌单与播放上下文（spec: track-availability）
+    func cleanupMissing() {
+        let ids = missingIds
+        guard !ids.isEmpty else { return }
+        let count = ids.count
+        library.removeAll { ids.contains($0.id) }
+        playlists = playlists.map { p in
+            var p = p
+            p.songIds.removeAll { ids.contains($0) }
+            return p
+        }
+        for id in ids { player.handleSongRemoved(id) }
+        missingIds.subtract(ids)
+        showToast("已清理 \(count) 首失效曲目")
     }
 
     func revealInFinder(_ song: Song) {
