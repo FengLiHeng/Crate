@@ -56,9 +56,7 @@ private struct ContentHeader: View {
                             app.cleanupMissing()
                         }
                     }
-                    ToolButton(systemName: "plus", help: "导入音乐文件") {
-                        app.importViaPanel()
-                    }
+                    ImportMenuButton()
                     ToolButton(
                         systemName: app.theme == .light ? "moon" : "sun.max",
                         help: app.theme == .light ? "切换深色模式" : "切换浅色模式"
@@ -141,6 +139,41 @@ private struct ToolButton: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(help)
+    }
+}
+
+private struct ImportMenuButton: View {
+    @Environment(AppState.self) private var app
+    @State private var hovering = false
+
+    var body: some View {
+        Menu {
+            Button {
+                app.importViaPanel()
+            } label: {
+                Label("导入文件", systemImage: "music.note.list")
+            }
+
+            Button {
+                app.importFolderViaPanel()
+            } label: {
+                Label("导入文件夹", systemImage: "folder")
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(hovering ? app.tokens.text : app.tokens.text2)
+                .frame(width: 32, height: 32)
+                .background(app.tokens.ctrl, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(hovering ? app.tokens.hover : .clear)
+                )
+        }
+        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("导入音乐")
     }
 }
 

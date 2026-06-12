@@ -66,9 +66,9 @@ final class AppState {
             library = persisted.songs
             playlists = persisted.playlists
         } else {
-            albums = SampleData.albums
-            library = SampleData.songs
-            playlists = SampleData.playlists
+            albums = []
+            library = []
+            playlists = []
         }
         loaded = true
         // init 中赋值不触发 didSet，手动建一次索引
@@ -250,11 +250,37 @@ final class AppState {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
+        panel.canChooseFiles = true
         panel.allowedContentTypes = [.audio]
         panel.prompt = "导入"
         if panel.runModal() == .OK {
             importFiles(panel.urls)
         }
+    }
+
+    func importFolderViaPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "导入文件夹"
+        guard panel.runModal() == .OK, let folderURL = panel.urls.first else { return }
+
+        let keys: Set<URLResourceKey> = [.isRegularFileKey]
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: folderURL,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        ) else {
+            showToast("未发现可导入的音频文件")
+            return
+        }
+
+        let fileURLs = urls.filter { url in
+            guard (try? url.resourceValues(forKeys: keys).isRegularFile) == true else { return false }
+            return true
+        }
+        importFiles(fileURLs)
     }
 
     func importFiles(_ urls: [URL]) {

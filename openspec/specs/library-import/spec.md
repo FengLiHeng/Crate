@@ -4,11 +4,30 @@
 TBD - created by archiving change local-music-player. Update Purpose after archive.
 ## Requirements
 ### Requirement: 文件选择导入
-内容区头部的 + 按钮 SHALL 打开系统文件选择面板（可多选，限音频类型 MP3/M4A/FLAC/WAV/AAC/OGG/AIFF）。确认后 SHALL 将所选文件加入资料库并切换到资料库视图，toast 显示导入数量。
+内容区头部的 + 控件 SHALL 打开二级菜单，菜单 SHALL 至少包含"导入文件"和"导入文件夹"动作。用户选择"导入文件"后，应用 SHALL 打开系统文件选择面板（可多选，限音频类型 MP3/M4A/FLAC/WAV/AAC/OGG/AIFF）。确认后 SHALL 将所选文件加入资料库并切换到资料库视图，toast 显示导入数量。
+
+#### Scenario: 打开导入菜单
+- **WHEN** 用户点击内容区头部的 + 控件
+- **THEN** 应用显示包含"导入文件"和"导入文件夹"的二级菜单
 
 #### Scenario: 多选导入
-- **WHEN** 用户通过 + 按钮选择 3 个音频文件确认
+- **WHEN** 用户通过 + 菜单选择"导入文件"并选择 3 个音频文件确认
 - **THEN** 资料库新增 3 首歌曲，视图切换到"歌曲"，toast 显示"已导入 3 首歌曲"
+
+### Requirement: 目录选择导入
+内容区头部的 + 菜单 SHALL 提供"导入文件夹"动作。用户选择单个目录确认后，应用 SHALL 扫描该目录的直接子项，过滤出支持格式 MP3/M4A/FLAC/WAV/AAC/OGG/AIFF 的音频文件，并通过与文件导入相同的导入流程加入资料库。
+
+#### Scenario: 目录导入音频文件
+- **WHEN** 用户通过 + 菜单选择"导入文件夹"并确认一个包含 3 个支持格式音频文件的目录
+- **THEN** 资料库新增 3 首歌曲，视图切换到"歌曲"，toast 显示"已导入 3 首歌曲"
+
+#### Scenario: 目录过滤非音频文件
+- **WHEN** 用户导入的目录包含 2 个支持格式音频文件和 1 个文本文件
+- **THEN** 仅导入 2 个音频文件，toast 显示"已导入 2 首歌曲"
+
+#### Scenario: 目录无有效音频文件
+- **WHEN** 用户导入的目录没有任何支持格式音频文件
+- **THEN** 不新增任何条目，toast 提示"未发现可导入的音频文件"
 
 ### Requirement: 拖拽导入
 应用 SHALL 支持将文件从 Finder 拖入窗口任意位置导入：拖入悬停时 SHALL 显示全窗口拖放遮罩（含提示文案与支持格式），放下后 SHALL 过滤出音频文件并导入。拖入内容不含文件或无音频文件时 SHALL toast 提示未发现可导入文件。
@@ -46,4 +65,3 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 #### Scenario: 重复导入
 - **WHEN** 用户再次导入资料库中已存在路径的文件
 - **THEN** 不新增条目，toast 提示已存在
-

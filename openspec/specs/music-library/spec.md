@@ -4,11 +4,11 @@
 TBD - created by archiving change local-music-player. Update Purpose after archive.
 ## Requirements
 ### Requirement: 曲库与歌单数据
-应用 SHALL 内置示例曲库（与设计材料 music-data.js 一致：8 张专辑、25 首歌曲、4 个播放列表）。曲库与播放列表的变更（导入、删除、加入歌单）SHALL 持久化，重启后保留。
+应用 SHALL 在无持久化曲库时以空资料库和空歌单列表启动，不 SHALL 内置或显示虚拟示例歌曲、专辑或播放列表。曲库与播放列表的变更（导入、删除、加入歌单）SHALL 持久化，重启后保留。
 
 #### Scenario: 首次启动
-- **WHEN** 用户首次启动应用
-- **THEN** 资料库显示 25 首示例歌曲，侧边栏显示 4 个示例播放列表
+- **WHEN** 用户首次启动应用且没有已保存的曲库数据
+- **THEN** 资料库显示 0 首歌曲，侧边栏不显示虚拟示例播放列表
 
 #### Scenario: 重启保留变更
 - **WHEN** 用户删除一首歌曲后重启应用
@@ -52,8 +52,8 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 - **THEN** 该歌曲从资料库、所有歌单、插播队列与播放上下文中移除；若正在播放该曲则停止播放，并 toast 确认
 
 #### Scenario: 在 Finder 中显示
-- **WHEN** 用户对一首有真实文件的导入歌曲选择"在 Finder 中显示"
-- **THEN** 在 Finder 中定位选中该文件；若为无文件的示例曲目则仅 toast 提示
+- **WHEN** 用户对一首有真实文件路径的导入歌曲选择"在 Finder 中显示"
+- **THEN** 在 Finder 中定位选中该文件；若歌曲没有真实文件路径则仅 toast 提示
 
 ### Requirement: 视图播放入口
 内容区头部 SHALL 提供"播放"与"随机播放"按钮：播放 SHALL 从当前视图（含搜索过滤结果）第一首顺序开始；随机播放 SHALL 开启随机模式并随机起播。当前视图无歌曲时两按钮 SHALL 禁用。
@@ -61,4 +61,3 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 #### Scenario: 点击随机播放
 - **WHEN** 用户在某歌单视图点击"随机播放"
 - **THEN** 随机模式开启，从该歌单随机一首开始播放
-
