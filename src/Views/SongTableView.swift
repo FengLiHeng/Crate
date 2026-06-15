@@ -180,22 +180,27 @@ private struct SongContextMenu: View {
     var song: Song
     @Environment(AppState.self) private var app
 
+    private var addablePlaylists: [Playlist] {
+        app.playlists.filter { playlist in
+            !app.isSystemGroup(playlist)
+                && app.viewPlaylist?.id != playlist.id
+                && !playlist.songIds.contains(song.id)
+        }
+    }
+
     var body: some View {
         Button("立即播放") { app.player.playSongNow(song) }
         Button("下一首播放") { app.player.playNextSong(song) }
         Button("添加到待播清单") { app.player.addToQueue(song) }
         Divider()
-        Menu("添加到分组") {
-            if app.playlists.isEmpty {
-                Button("暂无分组") {}
-                    .disabled(true)
-            } else {
-                ForEach(app.playlists) { pl in
+        if !addablePlaylists.isEmpty {
+            Menu("添加到分组") {
+                ForEach(addablePlaylists) { pl in
                     Button(pl.name) { app.addSong(song, to: pl) }
                 }
             }
+            Divider()
         }
-        Divider()
         if app.missingIds.contains(song.id) {
             Button("重新定位…") { app.relocate(song) }
         }
