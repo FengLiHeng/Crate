@@ -25,7 +25,34 @@ cp src/Assets.xcassets/AppIcon.appiconset/icon_256x256.png "$ICONSET/icon_256x25
 cp src/Assets.xcassets/AppIcon.appiconset/icon_256x256@2x.png "$ICONSET/icon_256x256@2x.png"
 cp src/Assets.xcassets/AppIcon.appiconset/icon_512x512.png "$ICONSET/icon_512x512.png"
 cp src/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png "$ICONSET/icon_512x512@2x.png"
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+if ! iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"; then
+    /usr/bin/python3 - "$ICONSET" "$APP/Contents/Resources/AppIcon.icns" <<'PY'
+import pathlib
+import struct
+import sys
+
+iconset = pathlib.Path(sys.argv[1])
+output = pathlib.Path(sys.argv[2])
+chunks = [
+    ("icp4", "icon_16x16.png"),
+    ("icp5", "icon_16x16@2x.png"),
+    ("icp6", "icon_32x32@2x.png"),
+    ("ic07", "icon_128x128.png"),
+    ("ic08", "icon_128x128@2x.png"),
+    ("ic09", "icon_256x256@2x.png"),
+    ("ic10", "icon_512x512@2x.png"),
+]
+
+body = bytearray()
+for kind, name in chunks:
+    data = (iconset / name).read_bytes()
+    body.extend(kind.encode("ascii"))
+    body.extend(struct.pack(">I", len(data) + 8))
+    body.extend(data)
+
+output.write_bytes(b"icns" + struct.pack(">I", len(body) + 8) + body)
+PY
+fi
 rm -rf "$ICONSET"
 
 cat > "$APP/Contents/Info.plist" <<'EOF'

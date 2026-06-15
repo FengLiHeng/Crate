@@ -57,6 +57,7 @@ struct PlayBarView: View {
                         .foregroundStyle(app.tokens.text2)
                         .lineLimit(1)
                 }
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             } else {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(app.tokens.ctrl)
@@ -101,6 +102,8 @@ struct PlayBarView: View {
                     active: player.repeatMode != .off,
                     help: player.repeatMode == .off ? "循环播放：关" : player.repeatMode == .all ? "列表循环" : "单曲循环"
                 ) { player.cycleRepeat() }
+
+                FavoriteButton(song: song)
             }
 
             HStack(spacing: 10) {
@@ -133,6 +136,49 @@ struct PlayBarView: View {
                 withAnimation(.spring(duration: 0.28)) { app.queueOpen.toggle() }
             }
         }
+    }
+}
+
+private struct FavoriteButton: View {
+    var song: Song?
+
+    @Environment(AppState.self) private var app
+    @State private var hovering = false
+    @State private var pressed = false
+
+    private var isFavorite: Bool {
+        song.map(app.isFavorite) ?? false
+    }
+
+    var body: some View {
+        Button {
+            guard let song else { return }
+            app.toggleFavorite(song)
+        } label: {
+            ZStack {
+                Image(systemName: "heart")
+                    .opacity(isFavorite ? 0 : 1)
+                Image(systemName: "heart.fill")
+                    .opacity(isFavorite ? 1 : 0)
+            }
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(isFavorite ? app.tokens.accent : (hovering ? app.tokens.text : app.tokens.text2))
+            .frame(width: 30, height: 30)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isFavorite ? app.tokens.accentSoft : (hovering ? app.tokens.hover : .clear))
+            )
+            .scaleEffect(pressed ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.14), value: isFavorite)
+            .animation(.easeOut(duration: 0.12), value: hovering)
+            .animation(.easeOut(duration: 0.08), value: pressed)
+        }
+        .buttonStyle(.plain)
+        .disabled(song == nil)
+        .opacity(song == nil ? 0.35 : 1)
+        .onHover { hovering = $0 }
+        .help(isFavorite ? "取消收藏" : "收藏")
+        .pressEvents(onPress: { pressed = true }, onRelease: { pressed = false })
     }
 }
 

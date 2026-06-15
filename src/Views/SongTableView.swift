@@ -200,7 +200,11 @@ private struct SongContextMenu: View {
             Button("重新定位…") { app.relocate(song) }
         }
         Button("在 Finder 中显示") { app.revealInFinder(song) }
-        Button("从资料库中删除", role: .destructive) { app.removeSong(song) }
+        if let playlist = app.viewPlaylist {
+            Button("从此分组移除", role: .destructive) { app.removeSong(song, from: playlist) }
+        } else {
+            Button("从资料库中删除", role: .destructive) { app.removeSong(song) }
+        }
     }
 }
 

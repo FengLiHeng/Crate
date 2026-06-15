@@ -18,6 +18,10 @@ enum GroupNameValidation {
 
 @Observable
 final class AppState {
+    static let favoritesGroupId = "system-favorites"
+    static let favoritesGroupName = "我的收藏"
+    private static let persistenceQueue = DispatchQueue(label: "com.crate.library-persistence", qos: .utility)
+
     // ── 主题（持久化键与设计稿 localStorage 对齐） ──
     var theme: AppTheme {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: "lmp-theme") }
@@ -68,16 +72,17 @@ final class AppState {
            let persisted = try? JSONDecoder().decode(PersistedLibrary.self, from: data) {
             albums = persisted.albums
             library = persisted.songs
-            playlists = persisted.playlists
+            playlists = Self.normalizedSystemGroups(persisted.playlists)
         } else {
             albums = []
             library = []
-            playlists = []
+            playlists = Self.normalizedSystemGroups([])
         }
         loaded = true
         // init 中赋值不触发 didSet，手动建一次索引
         albumsById = Dictionary(uniqueKeysWithValues: albums.map { ($0.id, $0) })
         songsById = Dictionary(uniqueKeysWithValues: library.map { ($0.id, $0) })
+        persist()
         backfillSidecarArtwork()
 
         player.songProvider = { [weak self] id in self?.songsById[id] }
@@ -151,6 +156,46 @@ final class AppState {
         song.albumId.flatMap { albumsById[$0]?.title } ?? "未知专辑"
     }
 
+    // ── 系统分组 / 我的收藏 ──
+
+    var favoritesGroup: Playlist? {
+        playlists.first { Self.isFavoritesGroupId($0.id) }
+    }
+
+    func isSystemGroup(_ group: Playlist) -> Bool {
+        Self.isFavoritesGroupId(group.id)
+    }
+
+    func isFavorite(_ song: Song) -> Bool {
+        favoritesGroup?.songIds.contains(song.id) == true
+    }
+
+    func toggleFavorite(_ song: Song) {
+        if isFavorite(song) {
+            updatePlaylists { groups in
+                groups.map { group in
+                    var group = group
+                    if Self.isFavoritesGroupId(group.id) {
+                        group.songIds.removeAll { $0 == song.id }
+                    }
+                    return group
+                }
+            }
+            showToast("已从「\(Self.favoritesGroupName)」移除")
+        } else {
+            updatePlaylists { groups in
+                groups.map { group in
+                    var group = group
+                    if Self.isFavoritesGroupId(group.id), !group.songIds.contains(song.id) {
+                        group.songIds.append(song.id)
+                    }
+                    return group
+                }
+            }
+            showToast("已收藏到「\(Self.favoritesGroupName)」")
+        }
+    }
+
     // ── Toast ──
     func showToast(_ msg: String) {
         toastTask?.cancel()
@@ -196,31 +241,35 @@ final class AppState {
         guard groupNameError(rawName) == nil else { return nil }
         let name = normalizedGroupName(rawName)
         let group = Playlist(id: "grp-" + UUID().uuidString, name: name, songIds: [])
-        playlists.append(group)
+        updatePlaylists { $0 + [group] }
         view = .playlist(group.id)
         showToast("已创建分组「\(name)」")
         return group
     }
 
     func renameGroup(_ groupId: String, to rawName: String) -> Bool {
+        guard !Self.isFavoritesGroupId(groupId) else { return false }
         guard groupNameError(rawName, excluding: groupId) == nil else { return false }
         let name = normalizedGroupName(rawName)
         var renamed = false
-        playlists = playlists.map { group in
-            var group = group
-            if group.id == groupId {
-                group.name = name
-                renamed = true
+        updatePlaylists { groups in
+            groups.map { group in
+                var group = group
+                if group.id == groupId {
+                    group.name = name
+                    renamed = true
+                }
+                return group
             }
-            return group
         }
         if renamed { showToast("已重命名为「\(name)」") }
         return renamed
     }
 
     func deleteGroup(_ groupId: String) {
+        guard !Self.isFavoritesGroupId(groupId) else { return }
         guard let group = playlists.first(where: { $0.id == groupId }) else { return }
-        playlists.removeAll { $0.id == groupId }
+        updatePlaylists { groups in groups.filter { $0.id != groupId } }
         if case .playlist(let id) = view, id == groupId {
             view = .library
         }
@@ -228,34 +277,59 @@ final class AppState {
     }
 
     func moveGroup(_ groupId: String, to destinationIndex: Int) {
+        guard !Self.isFavoritesGroupId(groupId) else { return }
         guard let sourceIndex = playlists.firstIndex(where: { $0.id == groupId }) else { return }
-        let moved = playlists.remove(at: sourceIndex)
-        let safeIndex = Swift.min(Swift.max(destinationIndex, 0), playlists.count)
-        playlists.insert(moved, at: safeIndex)
+        var updated = playlists
+        let moved = updated.remove(at: sourceIndex)
+        let safeIndex = Swift.min(Swift.max(destinationIndex, 1), updated.count)
+        updated.insert(moved, at: safeIndex)
+        playlists = Self.normalizedSystemGroups(updated)
     }
 
     func addSong(_ song: Song, to playlist: Playlist) {
-        if playlist.songIds.contains(song.id) {
-            showToast("「\(song.title)」已在分组「\(playlist.name)」中")
+        guard let current = playlists.first(where: { $0.id == playlist.id }) else { return }
+        if current.songIds.contains(song.id) {
+            showToast("「\(song.title)」已在分组「\(current.name)」中")
             return
         }
-        playlists = playlists.map { p in
-            var p = p
-            if p.id == playlist.id { p.songIds.append(song.id) }
-            return p
+        updatePlaylists { groups in
+            groups.map { group in
+                var group = group
+                if group.id == current.id { group.songIds.append(song.id) }
+                return group
+            }
         }
-        showToast("已添加到分组「\(playlist.name)」")
+        showToast("已添加到分组「\(current.name)」")
     }
 
     func removeSong(_ song: Song) {
         library.removeAll { $0.id == song.id }
-        playlists = playlists.map { p in
-            var p = p
-            p.songIds.removeAll { $0 == song.id }
-            return p
+        updatePlaylists { groups in
+            groups.map { group in
+                var group = group
+                group.songIds.removeAll { $0 == song.id }
+                return group
+            }
         }
         player.handleSongRemoved(song.id)
         showToast("已从资料库中删除「\(song.title)」")
+    }
+
+    func removeSong(_ song: Song, from playlist: Playlist) {
+        guard playlists.contains(where: { $0.id == playlist.id && $0.songIds.contains(song.id) }) else { return }
+        updatePlaylists { groups in
+            groups.map { group in
+                var group = group
+                if group.id == playlist.id {
+                    group.songIds.removeAll { $0 == song.id }
+                }
+                return group
+            }
+        }
+        if selectedId == song.id {
+            selectedId = nil
+        }
+        showToast("已从分组「\(playlist.name)」移除")
     }
 
     func clearLibrary() {
@@ -265,10 +339,12 @@ final class AppState {
         player.resetPlaybackSession()
         albums = []
         library = []
-        playlists = playlists.map { group in
-            var group = group
-            group.songIds = []
-            return group
+        updatePlaylists { groups in
+            groups.map { group in
+                var group = group
+                group.songIds = []
+                return group
+            }
         }
         missingIds.removeAll()
         view = .library
@@ -319,10 +395,12 @@ final class AppState {
         guard !ids.isEmpty else { return }
         let count = ids.count
         library.removeAll { ids.contains($0.id) }
-        playlists = playlists.map { p in
-            var p = p
-            p.songIds.removeAll { ids.contains($0) }
-            return p
+        updatePlaylists { groups in
+            groups.map { group in
+                var group = group
+                group.songIds.removeAll { ids.contains($0) }
+                return group
+            }
         }
         for id in ids { player.handleSongRemoved(id) }
         missingIds.subtract(ids)
@@ -492,6 +570,29 @@ final class AppState {
         return nil
     }
 
+    private static func isFavoritesGroupId(_ id: String) -> Bool {
+        id == favoritesGroupId
+    }
+
+    private static func normalizedSystemGroups(_ groups: [Playlist]) -> [Playlist] {
+        var favorites = groups.first { isFavoritesGroupId($0.id) }
+            ?? Playlist(id: favoritesGroupId, name: favoritesGroupName, songIds: [])
+        favorites.name = favoritesGroupName
+        favorites.songIds = uniqueSongIds(favorites.songIds)
+
+        let ordinaryGroups = groups.filter { !isFavoritesGroupId($0.id) }
+        return [favorites] + ordinaryGroups
+    }
+
+    private static func uniqueSongIds(_ ids: [String]) -> [String] {
+        var seen: Set<String> = []
+        return ids.filter { seen.insert($0).inserted }
+    }
+
+    private func updatePlaylists(_ transform: ([Playlist]) -> [Playlist]) {
+        playlists = Self.normalizedSystemGroups(transform(playlists))
+    }
+
     private func backfillSidecarArtwork() {
         var updated = library
         var changed = false
@@ -549,8 +650,10 @@ final class AppState {
     private func persist() {
         guard loaded else { return }
         let snapshot = PersistedLibrary(albums: albums, songs: library, playlists: playlists)
-        if let data = try? JSONEncoder().encode(snapshot) {
-            try? data.write(to: Self.storeURL, options: .atomic)
+        Self.persistenceQueue.async {
+            if let data = try? JSONEncoder().encode(snapshot) {
+                try? data.write(to: Self.storeURL, options: .atomic)
+            }
         }
     }
 }

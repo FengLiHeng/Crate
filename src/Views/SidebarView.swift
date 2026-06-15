@@ -34,13 +34,15 @@ struct SidebarView: View {
                             active: app.view == .playlist(pl.id)
                         ) { app.view = .playlist(pl.id) }
                         .contextMenu {
-                            Button("重命名") {
-                                editingGroup = pl
-                                groupName = pl.name
-                                showingGroupEditor = true
-                            }
-                            Button("删除分组", role: .destructive) {
-                                pendingDeleteGroup = pl
+                            if !app.isSystemGroup(pl) {
+                                Button("重命名") {
+                                    editingGroup = pl
+                                    groupName = pl.name
+                                    showingGroupEditor = true
+                                }
+                                Button("删除分组", role: .destructive) {
+                                    pendingDeleteGroup = pl
+                                }
                             }
                         }
                         .offset(y: rowOffset(for: pl.id, at: index))
@@ -122,7 +124,7 @@ struct SidebarView: View {
     private var dragTargetIndex: Int? {
         guard let dragStartIndex, !app.playlists.isEmpty else { return nil }
         let delta = Int((dragTranslation / groupRowHeight).rounded())
-        return Swift.min(Swift.max(dragStartIndex + delta, 0), app.playlists.count - 1)
+        return Swift.min(Swift.max(dragStartIndex + delta, 1), app.playlists.count - 1)
     }
 
     private func rowOffset(for groupId: String, at index: Int) -> CGFloat {
@@ -142,6 +144,7 @@ struct SidebarView: View {
     private func groupDragGesture(for groupId: String, at index: Int) -> some Gesture {
         DragGesture(minimumDistance: 5)
             .onChanged { value in
+                guard !isSystemGroup(groupId) else { return }
                 if draggedGroupId == nil {
                     draggedGroupId = groupId
                     dragStartIndex = index
@@ -158,6 +161,10 @@ struct SidebarView: View {
                 }
                 resetGroupDrag()
             }
+    }
+
+    private func isSystemGroup(_ groupId: String) -> Bool {
+        app.playlists.first(where: { $0.id == groupId }).map(app.isSystemGroup) ?? false
     }
 
     private func resetGroupDrag() {
