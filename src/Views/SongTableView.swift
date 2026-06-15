@@ -119,7 +119,7 @@ private struct SongRow: View {
 
             // 标题 + 封面
             HStack(spacing: 12) {
-                CoverView(album: album, size: 36, radius: 6)
+                CoverView(song: song, album: album, size: 36, radius: 6)
                 Text(song.title)
                     .font(.system(size: 13.5, weight: .medium))
                     .foregroundStyle(isCurrent ? app.tokens.accent : app.tokens.text)

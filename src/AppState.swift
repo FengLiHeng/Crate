@@ -78,6 +78,7 @@ final class AppState {
         // init 中赋值不触发 didSet，手动建一次索引
         albumsById = Dictionary(uniqueKeysWithValues: albums.map { ($0.id, $0) })
         songsById = Dictionary(uniqueKeysWithValues: library.map { ($0.id, $0) })
+        backfillSidecarArtwork()
 
         player.songProvider = { [weak self] id in self?.songsById[id] }
         player.onToast = { [weak self] msg in self?.showToast(msg) }
@@ -401,12 +402,14 @@ final class AppState {
         }
     }
 
-    /// 读取元数据：标题/艺术家/专辑/真实时长，缺失回退（spec: 元数据解析）
+    /// 读取元数据：标题/艺术家/专辑/真实时长/封面，缺失回退（spec: 元数据解析）
     private func parseMetadata(url: URL) async -> Song? {
         let asset = AVURLAsset(url: url)
         var title = url.deletingPathExtension().lastPathComponent
         var artist: String?
         var albumName: String?
+        var artworkData: Data?
+        var sidecarArtworkData: Data?
         var duration: Double = 0
 
         if let d = try? await asset.load(.duration) {
@@ -415,19 +418,31 @@ final class AppState {
         if let items = try? await asset.load(.commonMetadata) {
             for item in items {
                 guard let key = item.commonKey else { continue }
-                let value = try? await item.load(.stringValue)
                 switch key {
-                case .commonKeyTitle: if let v = value, !v.isEmpty { title = v }
-                case .commonKeyArtist: artist = value
-                case .commonKeyAlbumName: albumName = value
+                case .commonKeyTitle:
+                    if let value = try? await item.load(.stringValue), !value.isEmpty { title = value }
+                case .commonKeyArtist:
+                    artist = try? await item.load(.stringValue)
+                case .commonKeyAlbumName:
+                    albumName = try? await item.load(.stringValue)
+                case .commonKeyArtwork:
+                    if artworkData == nil,
+                       let data = try? await item.load(.dataValue),
+                       Self.isValidArtworkData(data) {
+                        artworkData = data
+                    }
                 default: break
                 }
             }
         }
+        if artworkData == nil {
+            sidecarArtworkData = Self.sidecarArtworkData(for: url)
+            artworkData = sidecarArtworkData
+        }
 
         var albumId: String?
         if let albumName, !albumName.isEmpty {
-            albumId = findOrCreateAlbum(title: albumName, artist: artist ?? "未知艺人")
+            albumId = findOrCreateAlbum(title: albumName, artist: artist ?? "未知艺人", artworkData: artworkData)
         }
 
         return Song(
@@ -436,13 +451,50 @@ final class AppState {
             artist: artist,
             albumId: albumId,
             duration: duration,
-            fileURL: url
+            fileURL: url,
+            artworkData: sidecarArtworkData ?? (albumId == nil ? artworkData : nil)
         )
     }
 
+    private static func isValidArtworkData(_ data: Data) -> Bool {
+        !data.isEmpty && NSImage(data: data) != nil
+    }
+
+    private static func sidecarArtworkData(for audioURL: URL) -> Data? {
+        let baseURL = audioURL.deletingPathExtension()
+        let extensions = ["jpg", "jpeg", "png", "webp", "JPG", "JPEG", "PNG", "WEBP"]
+        for ext in extensions {
+            let imageURL = baseURL.appendingPathExtension(ext)
+            guard FileManager.default.fileExists(atPath: imageURL.path),
+                  let data = try? Data(contentsOf: imageURL),
+                  isValidArtworkData(data) else { continue }
+            return data
+        }
+        return nil
+    }
+
+    private func backfillSidecarArtwork() {
+        var updated = library
+        var changed = false
+        for index in updated.indices {
+            guard updated[index].artworkData == nil,
+                  let fileURL = updated[index].fileURL,
+                  let data = Self.sidecarArtworkData(for: fileURL) else { continue }
+            updated[index].artworkData = data
+            changed = true
+        }
+        if changed {
+            library = updated
+        }
+    }
+
     /// 按专辑名+艺人复用或创建专辑，封面色相由名称稳定散列生成
-    private func findOrCreateAlbum(title: String, artist: String) -> String {
-        if let existing = albums.first(where: { $0.title == title && $0.artist == artist }) {
+    private func findOrCreateAlbum(title: String, artist: String, artworkData: Data?) -> String {
+        if let index = albums.firstIndex(where: { $0.title == title && $0.artist == artist }) {
+            let existing = albums[index]
+            if existing.artworkData == nil, let artworkData {
+                albums[index].artworkData = artworkData
+            }
             return existing.id
         }
         var hash: UInt64 = 5381
@@ -453,6 +505,7 @@ final class AppState {
             id: "alb-" + UUID().uuidString,
             title: title, artist: artist,
             year: Calendar.current.component(.year, from: .now),
+            artworkData: artworkData,
             h1: h1, h2: h2
         )
         albums.append(album)

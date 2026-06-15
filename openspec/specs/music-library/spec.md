@@ -15,7 +15,7 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 - **THEN** 该歌曲不再出现在资料库与任何歌单中
 
 ### Requirement: 歌曲表格
-内容区 SHALL 以表格展示当前视图的歌曲，列为：#（序号）、标题（含专辑封面缩略图）、艺术家、专辑、时长。头部 SHALL 显示视图标题与统计（N 首歌曲）。当前播放的行 SHALL 以高亮色与均衡器动画标识；悬停行的序号 SHALL 变为播放按钮；单击 SHALL 选中行，双击 SHALL 从该行开始播放。
+内容区 SHALL 以表格展示当前视图的歌曲，列为：#（序号）、标题（含专辑封面缩略图）、艺术家、专辑、时长。标题列的封面缩略图 SHALL 优先显示歌曲导入或启动回填时读取到的可用封面；当歌曲没有可用封面或封面无法渲染时，应用 SHALL 显示统一占位符。头部 SHALL 显示视图标题与统计（N 首歌曲）。当前播放的行 SHALL 以高亮色与均衡器动画标识；悬停行的序号 SHALL 变为播放按钮；单击 SHALL 选中行，双击 SHALL 从该行开始播放。
 
 #### Scenario: 双击播放
 - **WHEN** 用户双击表格中的某首歌
@@ -24,6 +24,14 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 #### Scenario: 悬停播放按钮
 - **WHEN** 用户将鼠标悬停在非当前播放的行上
 - **THEN** 序号位置显示播放按钮，点击即从该行开始轮转播放，并保留当前视图中的其他歌曲作为后续待播
+
+#### Scenario: 显示可用封面
+- **WHEN** 当前视图包含一首已导入且具有可用封面的歌曲
+- **THEN** 该歌曲标题列显示对应封面缩略图
+
+#### Scenario: 缺少封面显示占位符
+- **WHEN** 当前视图包含一首没有可用封面的歌曲
+- **THEN** 该歌曲标题列封面位置显示统一占位符，且不显示空白或破损图像
 
 #### Scenario: 空资料库提示
 - **WHEN** 当前视图没有任何歌曲且无搜索词

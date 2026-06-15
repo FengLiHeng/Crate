@@ -1,22 +1,42 @@
 import SwiftUI
+import AppKit
 
 // MARK: - 专辑封面（渐变占位 + 音符，player-ui.jsx Cover）
 
 struct CoverView: View {
-    var album: Album?
+    var song: Song? = nil
+    var album: Album? = nil
     var size: CGFloat = 36
     var radius: CGFloat = 6
 
+    private var artworkImage: NSImage? {
+        if let data = song?.artworkData, let image = NSImage(data: data) {
+            return image
+        }
+        if let data = album?.artworkData, let image = NSImage(data: data) {
+            return image
+        }
+        return nil
+    }
+
     var body: some View {
         ZStack {
-            if let album {
-                Rectangle().fill(album.coverGradient)
+            if let artworkImage {
+                Image(nsImage: artworkImage)
+                    .resizable()
+                    .scaledToFill()
             } else {
-                Rectangle().fill(idleCoverGradient)
+                ZStack {
+                    if let album {
+                        Rectangle().fill(album.coverGradient)
+                    } else {
+                        Rectangle().fill(idleCoverGradient)
+                    }
+                    Image(systemName: "music.note")
+                        .font(.system(size: size * 0.4, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.45))
+                }
             }
-            Image(systemName: "music.note")
-                .font(.system(size: size * 0.4, weight: .medium))
-                .foregroundStyle(.white.opacity(0.45))
             // 左上高光（.cover::after）
             LinearGradient(
                 stops: [

@@ -1,48 +1,4 @@
-# library-import Specification
-
-## Purpose
-TBD - created by archiving change local-music-player. Update Purpose after archive.
-## Requirements
-### Requirement: 文件选择导入
-内容区头部的 + 控件 SHALL 打开二级菜单，菜单 SHALL 至少包含"导入文件"和"导入文件夹"动作。用户选择"导入文件"后，应用 SHALL 打开系统文件选择面板（可多选，限音频类型 MP3/M4A/FLAC/WAV/AAC/OGG/AIFF）。确认后 SHALL 将所选文件加入资料库并切换到资料库视图，toast 显示导入数量。
-
-#### Scenario: 打开导入菜单
-- **WHEN** 用户点击内容区头部的 + 控件
-- **THEN** 应用显示包含"导入文件"和"导入文件夹"的二级菜单
-
-#### Scenario: 多选导入
-- **WHEN** 用户通过 + 菜单选择"导入文件"并选择 3 个音频文件确认
-- **THEN** 资料库新增 3 首歌曲，视图切换到"歌曲"，toast 显示"已导入 3 首歌曲"
-
-### Requirement: 目录选择导入
-内容区头部的 + 菜单 SHALL 提供"导入文件夹"动作。用户选择单个目录确认后，应用 SHALL 扫描该目录的直接子项，过滤出支持格式 MP3/M4A/FLAC/WAV/AAC/OGG/AIFF 的音频文件，并通过与文件导入相同的导入流程加入资料库。
-
-#### Scenario: 目录导入音频文件
-- **WHEN** 用户通过 + 菜单选择"导入文件夹"并确认一个包含 3 个支持格式音频文件的目录
-- **THEN** 资料库新增 3 首歌曲，视图切换到"歌曲"，toast 显示"已导入 3 首歌曲"
-
-#### Scenario: 目录过滤非音频文件
-- **WHEN** 用户导入的目录包含 2 个支持格式音频文件和 1 个文本文件
-- **THEN** 仅导入 2 个音频文件，toast 显示"已导入 2 首歌曲"
-
-#### Scenario: 目录无有效音频文件
-- **WHEN** 用户导入的目录没有任何支持格式音频文件
-- **THEN** 不新增任何条目，toast 提示"未发现可导入的音频文件"
-
-### Requirement: 拖拽导入
-应用 SHALL 支持将文件从 Finder 拖入窗口任意位置导入：拖入悬停时 SHALL 显示全窗口拖放遮罩（含提示文案与支持格式），放下后 SHALL 过滤出音频文件并导入。拖入内容不含文件或无音频文件时 SHALL toast 提示未发现可导入文件。
-
-#### Scenario: 拖拽悬停遮罩
-- **WHEN** 用户拖着文件进入窗口
-- **THEN** 显示"拖放以导入音乐"遮罩；拖离窗口或放下后遮罩消失
-
-#### Scenario: 混合文件过滤
-- **WHEN** 用户拖入 2 个音频文件和 1 个文本文件
-- **THEN** 仅导入 2 个音频文件，toast 显示"已导入 2 首歌曲"
-
-#### Scenario: 无有效文件
-- **WHEN** 用户拖入的文件全部不是音频
-- **THEN** 不新增任何条目，toast 提示"未发现可导入的音频文件"
+## MODIFIED Requirements
 
 ### Requirement: 元数据解析
 导入时应用 SHALL 异步读取文件元数据：标题、艺术家、专辑名、真实时长与可用封面；可用封面 SHALL 优先来自音频文件内嵌专辑封面，音频文件没有内嵌封面时 SHALL 尝试读取同目录、同文件名的图片文件（支持 `.jpg`、`.jpeg`、`.png`、`.webp`）作为封面。标题缺失时 SHALL 回退为去扩展名的文件名，艺术家缺失时 SHALL 显示"未知艺人"。文件没有可用封面、封面数据为空或封面解析失败时，导入 SHALL 继续完成且该歌曲 SHALL 使用封面占位符。无法解码的文件 SHALL 跳过并 toast 提示。

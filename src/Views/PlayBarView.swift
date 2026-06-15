@@ -46,7 +46,7 @@ struct PlayBarView: View {
     private func nowPlaying(song: Song?, album: Album?) -> some View {
         HStack(spacing: 12) {
             if let song {
-                CoverView(album: album, size: 48, radius: 7)
+                CoverView(song: song, album: album, size: 48, radius: 7)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.title)
                         .font(.system(size: 13.5, weight: .semibold))

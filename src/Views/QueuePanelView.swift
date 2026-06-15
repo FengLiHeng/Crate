@@ -101,7 +101,7 @@ private struct QueueRow: View {
     var body: some View {
         let album = song.albumId.flatMap { app.albumsById[$0] }
         HStack(spacing: 10) {
-            CoverView(album: album, size: 34, radius: 6)
+            CoverView(song: song, album: album, size: 34, radius: 6)
             VStack(alignment: .leading, spacing: 1) {
                 Text(song.title)
                     .font(.system(size: 13, weight: .medium))
