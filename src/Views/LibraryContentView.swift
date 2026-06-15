@@ -17,6 +17,7 @@ struct LibraryContentView: View {
 
 private struct ContentHeader: View {
     @Environment(AppState.self) private var app
+    @State private var confirmClearLibrary = false
 
     var body: some View {
         @Bindable var app = app
@@ -55,6 +56,9 @@ private struct ContentHeader: View {
                             app.cleanupMissing()
                         }
                     }
+                    ToolButton(systemName: "trash", help: "清空歌曲列表", disabled: app.library.isEmpty) {
+                        confirmClearLibrary = true
+                    }
                     ImportMenuButton()
                     ToolButton(
                         systemName: app.theme == .light ? "moon" : "sun.max",
@@ -77,6 +81,14 @@ private struct ContentHeader: View {
             .padding(.top, 14)
         }
         .padding(.init(top: 16, leading: 24, bottom: 12, trailing: 24))
+        .alert("清空歌曲列表？", isPresented: $confirmClearLibrary) {
+            Button("取消", role: .cancel) { }
+            Button("清空", role: .destructive) {
+                app.clearLibrary()
+            }
+        } message: {
+            Text("这会移除列表中的所有歌曲并清空待播清单，但不会删除磁盘上的音频文件。")
+        }
     }
 }
 
@@ -118,6 +130,7 @@ private struct SearchField: View {
 private struct ToolButton: View {
     var systemName: String
     var help: String
+    var disabled = false
     var action: () -> Void
 
     @Environment(AppState.self) private var app
@@ -127,15 +140,17 @@ private struct ToolButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(hovering ? app.tokens.text : app.tokens.text2)
+                .foregroundStyle(hovering && !disabled ? app.tokens.text : app.tokens.text2)
                 .frame(width: 32, height: 32)
                 .background(app.tokens.ctrl, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(hovering ? app.tokens.hover : .clear)
+                        .fill(hovering && !disabled ? app.tokens.hover : .clear)
                 )
         }
         .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.35 : 1)
         .onHover { hovering = $0 }
         .help(help)
     }

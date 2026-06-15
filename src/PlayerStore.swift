@@ -199,6 +199,15 @@ final class PlayerStore {
         onToast("已清空待播清单")
     }
 
+    func resetPlaybackSession() {
+        stopPlayback()
+        playToken += 1
+        manualQueue = []
+        ctx = Context()
+        isManual = false
+        skipVisited.removeAll()
+    }
+
     func playManualAt(_ index: Int) {
         guard manualQueue.indices.contains(index) else { return }
         let id = manualQueue.remove(at: index)

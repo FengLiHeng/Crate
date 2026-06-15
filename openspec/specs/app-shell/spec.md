@@ -11,11 +11,15 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 - **THEN** 显示侧边栏 + 内容区 + 播放条的完整布局，默认进入"歌曲"（资料库）视图，待播清单面板处于收起状态
 
 ### Requirement: 侧边栏导航
-侧边栏 SHALL 分两组展示导航项："资料库"组（歌曲）与"播放列表"组（所有歌单）。点击导航项 SHALL 切换内容区视图，当前视图对应的导航项 SHALL 呈高亮选中态。
+侧边栏 SHALL 分两组展示导航项：“资料库”组（歌曲）与“分组”组（所有音乐分组）。点击导航项 SHALL 切换内容区视图，当前视图对应的导航项 SHALL 呈高亮选中态。“分组”组标题旁 SHALL 提供新增按钮，用于创建新的音乐分组。
 
-#### Scenario: 切换到歌单视图
-- **WHEN** 用户点击侧边栏中的某个播放列表
-- **THEN** 内容区切换为该歌单的歌曲列表，该导航项呈选中态，"歌曲"项取消选中态
+#### Scenario: 切换到分组视图
+- **WHEN** 用户点击侧边栏中的某个分组
+- **THEN** 内容区切换为该分组的歌曲列表，该导航项呈选中态，“歌曲”项取消选中态
+
+#### Scenario: 打开新建分组入口
+- **WHEN** 用户点击侧边栏“分组”标题旁的新增按钮
+- **THEN** 应用显示用于输入分组名称的创建界面
 
 ### Requirement: 主题切换与持久化
 应用 SHALL 提供浅色/深色两套主题，由内容区头部的主题按钮手动切换（非跟随系统外观）。主题选择 SHALL 持久化，重启后 SHALL 恢复上次选择且不出现错误主题闪烁。
@@ -34,4 +38,3 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 #### Scenario: 操作触发提示
 - **WHEN** 用户执行"添加到待播清单"等带反馈的操作
 - **THEN** 显示对应文案的 toast，约 2 秒后自动消失
-

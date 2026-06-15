@@ -258,6 +258,25 @@ final class AppState {
         showToast("已从资料库中删除「\(song.title)」")
     }
 
+    func clearLibrary() {
+        let count = library.count
+        guard count > 0 else { return }
+
+        player.resetPlaybackSession()
+        albums = []
+        library = []
+        playlists = playlists.map { group in
+            var group = group
+            group.songIds = []
+            return group
+        }
+        missingIds.removeAll()
+        view = .library
+        selectedId = nil
+        search = ""
+        showToast("已清空歌曲列表（\(count) 首）")
+    }
+
     /// 为失效曲目重新定位文件，并自动批量修复同一旧目录下的其他失效曲目（spec: track-availability，design.md D6）
     func relocate(_ song: Song) {
         let panel = NSOpenPanel()

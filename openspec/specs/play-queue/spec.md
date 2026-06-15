@@ -43,3 +43,9 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 - **WHEN** 在上下文播放中用户对另一首歌选择"立即播放"，且该曲播放完毕
 - **THEN** 继续播放原上下文中（原位置的）下一首
 
+### Requirement: 清空歌曲列表时重置待播清单
+当用户确认清空歌曲列表时，应用 SHALL 停止当前播放，并清空插播队列、播放上下文和待播清单中的全部残留曲目。清空完成后，待播清单面板 MUST NOT 展示旧歌曲的“正在播放”、“插播”或“接下来”条目。
+
+#### Scenario: 清空歌曲列表同步清空待播清单
+- **WHEN** 用户确认清空歌曲列表
+- **THEN** 当前播放停止，插播队列为空，播放上下文为空，待播清单不再显示任何旧歌曲
