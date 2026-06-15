@@ -61,7 +61,7 @@ final class PlayerStore {
     // MARK: - 启动播放
 
     /// 从列表开始播放（playFrom）
-    func playFrom(_ list: [Song], index: Int, forceShuffle: Bool = false) {
+    func playFrom(_ list: [Song], index: Int, forceShuffle: Bool = false, rotateFromIndex: Bool = false) {
         let ids = list.map(\.id)
         guard !ids.isEmpty else { return }
         skipVisited.removeAll()
@@ -72,6 +72,9 @@ final class PlayerStore {
         if useShuffle {
             let startId = index >= 0 ? ids[index] : ids.randomElement()!
             ordered = [startId] + ids.filter { $0 != startId }.shuffled()
+            pos = 0
+        } else if rotateFromIndex, pos > 0 {
+            ordered = Array(ids[pos...]) + Array(ids[..<pos])
             pos = 0
         }
         ctx = Context(ids: ordered, originalIds: ids, pos: pos)

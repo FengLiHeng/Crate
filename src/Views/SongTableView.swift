@@ -34,7 +34,7 @@ struct SongTableView: View {
                         Section {
                             ForEach(Array(songs.enumerated()), id: \.element.id) { i, song in
                                 SongRow(song: song, index: i, cols: cols) {
-                                    app.player.playFrom(songs, index: i)
+                                    app.player.playFrom(songs, index: i, rotateFromIndex: true)
                                 }
                             }
                         } header: {

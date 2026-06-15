@@ -21,7 +21,6 @@ private struct ContentHeader: View {
     var body: some View {
         @Bindable var app = app
         let songs = app.viewSongs
-        let total = songs.reduce(0) { $0 + $1.duration }
 
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 16) {
@@ -40,7 +39,7 @@ private struct ContentHeader: View {
                             .font(.system(size: 24, weight: .bold))
                             .kerning(-0.3)
                             .foregroundStyle(app.tokens.text)
-                        Text("\(songs.count) 首歌曲 · \(formatTotal(total))")
+                        Text("\(songs.count) 首歌曲")
                             .font(.system(size: 12.5))
                             .foregroundStyle(app.tokens.text2)
                     }
