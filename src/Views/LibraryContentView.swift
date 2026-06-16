@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct LibraryContentView: View {
     @Environment(AppState.self) private var app
@@ -134,20 +135,11 @@ private struct ToolButton: View {
     var disabled = false
     var action: () -> Void
 
-    @Environment(AppState.self) private var app
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(hovering && !disabled ? app.tokens.text : app.tokens.text2)
-                .frame(width: 32, height: 32)
-                .background(app.tokens.ctrl, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(hovering && !disabled ? app.tokens.hover : .clear)
-                )
+            ToolButtonChrome(systemName: systemName, hovering: hovering, disabled: disabled)
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -162,33 +154,84 @@ private struct ImportMenuButton: View {
     @State private var hovering = false
 
     var body: some View {
-        Menu {
-            Button {
-                app.importViaPanel()
-            } label: {
-                Label("导入文件", systemImage: "music.note.list")
-            }
-
-            Button {
-                app.importFolderViaPanel()
-            } label: {
-                Label("导入文件夹", systemImage: "folder")
-            }
+        Button {
+            ImportMenuActionTarget(
+                importFiles: { app.importViaPanel() },
+                importFolder: { app.importFolderViaPanel() }
+            ).show()
         } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(hovering ? app.tokens.text : app.tokens.text2)
-                .frame(width: 32, height: 32)
-                .background(app.tokens.ctrl, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(hovering ? app.tokens.hover : .clear)
-                )
+            ToolButtonChrome(systemName: "plus", hovering: hovering)
         }
-        .menuStyle(.borderlessButton)
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help("导入音乐")
+    }
+}
+
+private final class ImportMenuActionTarget: NSObject, NSMenuDelegate {
+    private static var retainedTargets: [ImportMenuActionTarget] = []
+
+    private let importFiles: () -> Void
+    private let importFolder: () -> Void
+
+    init(importFiles: @escaping () -> Void, importFolder: @escaping () -> Void) {
+        self.importFiles = importFiles
+        self.importFolder = importFolder
+    }
+
+    func show() {
+        let menu = NSMenu()
+        menu.delegate = self
+
+        let fileItem = NSMenuItem(title: "导入文件", action: #selector(importFilesAction), keyEquivalent: "")
+        fileItem.image = NSImage(systemSymbolName: "music.note.list", accessibilityDescription: nil)
+        fileItem.target = self
+        menu.addItem(fileItem)
+
+        let folderItem = NSMenuItem(title: "导入文件夹", action: #selector(importFolderAction), keyEquivalent: "")
+        folderItem.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
+        folderItem.target = self
+        menu.addItem(folderItem)
+
+        Self.retainedTargets.append(self)
+
+        if let event = NSApp.currentEvent, let view = event.window?.contentView {
+            NSMenu.popUpContextMenu(menu, with: event, for: view)
+        } else {
+            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        }
+    }
+
+    @objc private func importFilesAction() {
+        importFiles()
+    }
+
+    @objc private func importFolderAction() {
+        importFolder()
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        Self.retainedTargets.removeAll { $0 === self }
+    }
+}
+
+private struct ToolButtonChrome: View {
+    var systemName: String
+    var hovering: Bool
+    var disabled = false
+
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(hovering && !disabled ? app.tokens.text : app.tokens.text2)
+            .frame(width: 32, height: 32)
+            .background(app.tokens.ctrl, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(hovering && !disabled ? app.tokens.hover : .clear)
+            )
     }
 }
 
