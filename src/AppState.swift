@@ -16,6 +16,12 @@ enum GroupNameValidation {
     static let maxLength = 24
 }
 
+struct LyricsPageState: Equatable {
+    var songId: String
+    var lyricsURL: URL
+    var lyrics: ParsedLyrics
+}
+
 @Observable
 final class AppState {
     static let favoritesGroupId = "system-favorites"
@@ -91,6 +97,7 @@ final class AppState {
     var queueOpen = false
     var toast: String?
     var dragOver = false
+    var lyricsPage: LyricsPageState?
 
     // ── 失效曲目（运行时派生，不持久化；design.md D1） ──
     var missingIds: Set<String> = []
@@ -247,6 +254,58 @@ final class AppState {
 
     func albumTitle(for song: Song) -> String {
         song.albumId.flatMap { albumsById[$0]?.title } ?? "未知专辑"
+    }
+
+    // ── 歌词（同名 .lrc sidecar） ──
+
+    func openLyricsForCurrentSong() {
+        guard let song = player.currentSong else {
+            showToast("当前没有播放歌曲")
+            return
+        }
+        guard let page = loadLyricsPage(for: song, reportFailure: true) else { return }
+        lyricsPage = page
+    }
+
+    func closeLyricsPage() {
+        lyricsPage = nil
+    }
+
+    func refreshLyricsPageForCurrentSong() {
+        guard lyricsPage != nil else { return }
+        guard let song = player.currentSong else {
+            lyricsPage = nil
+            return
+        }
+        guard let page = loadLyricsPage(for: song, reportFailure: true) else {
+            lyricsPage = nil
+            return
+        }
+        lyricsPage = page
+    }
+
+    private func lyricsURL(for song: Song) -> URL? {
+        song.fileURL?.deletingPathExtension().appendingPathExtension("lrc")
+    }
+
+    private func loadLyricsPage(for song: Song, reportFailure: Bool) -> LyricsPageState? {
+        guard let url = lyricsURL(for: song),
+              FileManager.default.fileExists(atPath: url.path) else {
+            if reportFailure { showToast("未找到同名歌词文件") }
+            return nil
+        }
+        do {
+            let data = try Data(contentsOf: url)
+            guard let source = LRCFileReader.decode(data) else {
+                if reportFailure { showToast("歌词文件无法解析") }
+                return nil
+            }
+            let lyrics = try LRCParser.parse(source)
+            return LyricsPageState(songId: song.id, lyricsURL: url, lyrics: lyrics)
+        } catch {
+            if reportFailure { showToast("歌词文件无法解析") }
+            return nil
+        }
     }
 
     // ── 系统分组 / 我的收藏 ──

@@ -10,11 +10,17 @@ struct RootView: View {
         VStack(spacing: 0) {
             // 主区域：侧边栏 + 内容区 + 待播清单面板（覆盖式滑入）
             ZStack(alignment: .trailing) {
-                HStack(spacing: 0) {
-                    SidebarView()
-                    LibraryContentView()
+                if let lyricsPage = app.lyricsPage {
+                    LyricsPlaybackView(page: lyricsPage)
+                        .transition(.opacity)
+                } else {
+                    HStack(spacing: 0) {
+                        SidebarView()
+                        LibraryContentView()
+                    }
+                    .transition(.opacity)
                 }
-                if app.queueOpen {
+                if app.queueOpen, app.lyricsPage == nil {
                     QueuePanelView()
                         .transition(.move(edge: .trailing))
                 }
@@ -34,6 +40,10 @@ struct RootView: View {
             }
         }
         .animation(.easeOut(duration: 0.25), value: app.toast)
+        .animation(.easeOut(duration: 0.22), value: app.lyricsPage)
+        .onChange(of: app.player.currentId) { _, _ in
+            app.refreshLyricsPageForCurrentSong()
+        }
         // 拖拽导入（spec: library-import；player.css .drop-overlay）
         .onDrop(of: [.fileURL], isTargeted: $app.dragOver) { providers in
             handleDrop(providers)
