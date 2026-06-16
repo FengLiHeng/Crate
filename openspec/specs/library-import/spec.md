@@ -4,7 +4,7 @@
 TBD - created by archiving change local-music-player. Update Purpose after archive.
 ## Requirements
 ### Requirement: 文件选择导入
-内容区头部的 + 控件 SHALL 打开二级菜单，菜单 SHALL 至少包含"导入文件"和"导入文件夹"动作。用户选择"导入文件"后，应用 SHALL 打开系统文件选择面板（可多选，限音频类型 MP3/M4A/FLAC/WAV/AAC/OGG/AIFF）。确认后 SHALL 将所选文件加入资料库并切换到资料库视图，toast 显示导入数量。
+内容区头部的 + 控件 SHALL 打开二级菜单，菜单 SHALL 至少包含"导入文件"和"导入文件夹"动作。用户选择"导入文件"后，应用 SHALL 打开系统文件选择面板（可多选，限音频类型 MP3/M4A/FLAC/WAV/AAC/AIFF）。确认后 SHALL 将所选文件加入资料库并切换到资料库视图，toast 显示导入数量。
 
 #### Scenario: 打开导入菜单
 - **WHEN** 用户点击内容区头部的 + 控件
@@ -15,7 +15,7 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 - **THEN** 资料库新增 3 首歌曲，视图切换到"歌曲"，toast 显示"已导入 3 首歌曲"
 
 ### Requirement: 目录选择导入
-内容区头部的 + 菜单 SHALL 提供"导入文件夹"动作。用户选择单个目录确认后，应用 SHALL 扫描该目录的直接子项，过滤出支持格式 MP3/M4A/FLAC/WAV/AAC/OGG/AIFF 的音频文件，并通过与文件导入相同的导入流程加入资料库。
+内容区头部的 + 菜单 SHALL 提供"导入文件夹"动作。用户选择单个目录确认后，应用 SHALL 扫描该目录的直接子项，过滤出支持格式 MP3/M4A/FLAC/WAV/AAC/AIFF 的音频文件，并通过与文件导入相同的导入流程加入资料库。
 
 #### Scenario: 目录导入音频文件
 - **WHEN** 用户通过 + 菜单选择"导入文件夹"并确认一个包含 3 个支持格式音频文件的目录
@@ -45,7 +45,7 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 - **THEN** 不新增任何条目，toast 提示"未发现可导入的音频文件"
 
 ### Requirement: 元数据解析
-导入时应用 SHALL 异步读取文件元数据：标题、艺术家、专辑名、真实时长与可用封面；可用封面 SHALL 优先来自音频文件内嵌专辑封面，音频文件没有内嵌封面时 SHALL 尝试读取同目录、同文件名的图片文件（支持 `.jpg`、`.jpeg`、`.png`、`.webp`）作为封面。标题缺失时 SHALL 回退为去扩展名的文件名，艺术家缺失时 SHALL 显示"未知艺人"。文件没有可用封面、封面数据为空或封面解析失败时，导入 SHALL 继续完成且该歌曲 SHALL 使用封面占位符。无法解码的文件 SHALL 跳过并 toast 提示。
+导入时应用 SHALL 在后台读取文件元数据，不得因音频解码、元数据读取、封面读取或图片压缩阻塞 UI 主线程。元数据包括：标题、艺术家、专辑名、真实时长与可用封面；可用封面 SHALL 优先来自音频文件内嵌专辑封面，音频文件没有内嵌封面时 SHALL 尝试读取同目录、同文件名的图片文件（支持 `.jpg`、`.jpeg`、`.png`、`.webp`）作为封面。标题缺失时 SHALL 回退为去扩展名的文件名，艺术家缺失时 SHALL 显示"未知艺人"。文件没有可用封面、封面数据为空、封面解析失败或封面超过持久化尺寸限制且无法压缩到限制内时，导入 SHALL 继续完成且该歌曲 SHALL 使用封面占位符。无法解码的文件 SHALL 跳过并 toast 提示。
 
 #### Scenario: 含完整标签和封面的文件
 - **WHEN** 导入一个带 ID3 标签（标题/艺术家/专辑封面）的 MP3
@@ -63,8 +63,12 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 - **WHEN** 导入一个标题、艺术家和时长可读取但封面数据无法解析的音频文件
 - **THEN** 该歌曲仍 SHALL 加入资料库并显示可读取的文字元数据，封面位置显示占位符
 
+#### Scenario: 批量导入期间界面可交互
+- **WHEN** 用户导入包含大量音频文件的目录
+- **THEN** 应用在后台处理解码与元数据读取，主界面在导入期间保持可交互
+
 ### Requirement: 导入持久化与去重路径记录
-导入的歌曲 SHALL 记录文件绝对路径并随曲库持久化，重启后仍可播放；导入时读取到的可用专辑封面 SHALL 随曲库持久化，重启后仍可显示。应用启动时，已持久化歌曲若缺少封面且其文件路径旁存在同名图片，应用 SHALL 回填该图片作为歌曲封面并持久化。同一路径重复导入 SHALL 不产生重复条目并 toast 提示。
+导入的歌曲 SHALL 记录文件绝对路径并随曲库持久化，重启后仍可播放；导入时读取到且满足尺寸限制的可用专辑封面 SHALL 随曲库持久化，重启后仍可显示。应用启动时，已持久化歌曲若缺少封面且其文件路径旁存在同名图片，应用 SHALL 在后台尝试回填该图片；若图片有效且满足尺寸限制或可压缩到限制内，SHALL 作为歌曲封面并持久化。同一路径重复导入 SHALL 不产生重复条目并 toast 提示。
 
 #### Scenario: 重启后播放导入曲目
 - **WHEN** 用户导入歌曲后重启应用并双击该歌曲

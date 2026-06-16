@@ -1,6 +1,27 @@
 import SwiftUI
 import AppKit
 
+private final class ArtworkImageCache {
+    static let shared = ArtworkImageCache()
+
+    private let cache = NSCache<NSString, NSImage>()
+
+    private init() {
+        cache.countLimit = 600
+    }
+
+    func image(for data: Data?, key: String) -> NSImage? {
+        guard let data else { return nil }
+        let cacheKey = NSString(string: "\(key)-\(data.count)")
+        if let cached = cache.object(forKey: cacheKey) {
+            return cached
+        }
+        guard let image = NSImage(data: data) else { return nil }
+        cache.setObject(image, forKey: cacheKey)
+        return image
+    }
+}
+
 // MARK: - 专辑封面（真实封面 + 统一占位符）
 
 struct CoverView: View {
@@ -12,10 +33,12 @@ struct CoverView: View {
     @Environment(AppState.self) private var app
 
     private var artworkImage: NSImage? {
-        if let data = song?.artworkData, let image = NSImage(data: data) {
+        if let song,
+           let image = ArtworkImageCache.shared.image(for: song.artworkData, key: "song-\(song.id)") {
             return image
         }
-        if let data = album?.artworkData, let image = NSImage(data: data) {
+        if let album,
+           let image = ArtworkImageCache.shared.image(for: album.artworkData, key: "album-\(album.id)") {
             return image
         }
         return nil
@@ -174,8 +197,7 @@ private struct AlbumCoverTile: View {
     @Environment(AppState.self) private var app
 
     private var artworkImage: NSImage? {
-        guard let data = album.artworkData else { return nil }
-        return NSImage(data: data)
+        ArtworkImageCache.shared.image(for: album.artworkData, key: "album-\(album.id)")
     }
 
     var body: some View {

@@ -45,7 +45,7 @@ struct PlayBarView: View {
     private func nowPlaying(song: Song?, album: Album?) -> some View {
         HStack(spacing: 12) {
             if let song {
-                CoverView(song: song, album: album, size: 48, radius: 7)
+                LyricsCoverButton(song: song, album: album)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.title)
                         .font(.system(size: 13.5, weight: .semibold))
@@ -128,6 +128,45 @@ struct PlayBarView: View {
                 withAnimation(.spring(duration: 0.28)) { app.queueOpen.toggle() }
             }
         }
+    }
+}
+
+private struct LyricsCoverButton: View {
+    var song: Song
+    var album: Album?
+
+    @Environment(AppState.self) private var app
+    @State private var hovering = false
+    @State private var pressed = false
+
+    var body: some View {
+        Button {
+            app.openLyricsForCurrentSong()
+        } label: {
+            CoverView(song: song, album: album, size: 48, radius: 7)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(app.tokens.accentSoft)
+                        .opacity(hovering ? 1 : 0)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: "text.quote")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(app.tokens.accentFg)
+                        .frame(width: 17, height: 17)
+                        .background(Circle().fill(app.tokens.accent))
+                        .shadow(color: .black.opacity(0.22), radius: 1, y: 0.5)
+                        .opacity(hovering ? 1 : 0)
+                        .offset(x: 3, y: 3)
+                }
+                .scaleEffect(pressed ? 0.95 : 1)
+                .animation(.easeOut(duration: 0.12), value: hovering)
+                .animation(.easeOut(duration: 0.08), value: pressed)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("打开歌词页")
+        .pressEvents(onPress: { pressed = true }, onRelease: { pressed = false })
     }
 }
 
