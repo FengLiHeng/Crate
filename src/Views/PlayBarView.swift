@@ -22,14 +22,13 @@ struct PlayBarView: View {
         .background {
             ZStack {
                 app.tokens.playbarBg
-                // 专辑氛围渐变（player.css .pb-ambient）
                 if let album {
                     LinearGradient(
                         stops: [
-                            .init(color: oklch(0.65, 0.1, album.h1, 0.2), location: 0),
-                            .init(color: .clear, location: 0.4),
-                            .init(color: .clear, location: 0.6),
-                            .init(color: oklch(0.65, 0.1, album.h2, 0.16), location: 1),
+                            .init(color: album.playbarAmbient(theme: app.theme, hue: album.h1, alpha: app.theme == .dark ? 0.16 : 0.13), location: 0),
+                            .init(color: .clear, location: 0.34),
+                            .init(color: .clear, location: 0.66),
+                            .init(color: album.playbarAmbient(theme: app.theme, hue: album.h2, alpha: app.theme == .dark ? 0.13 : 0.1), location: 1),
                         ],
                         startPoint: .leading, endPoint: .trailing
                     )
@@ -59,14 +58,7 @@ struct PlayBarView: View {
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             } else {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(app.tokens.ctrl)
-                    .frame(width: 48, height: 48)
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: 17))
-                            .foregroundStyle(app.tokens.text3)
-                    )
+                CoverView(size: 48, radius: 7)
                 Text("未在播放")
                     .font(.system(size: 12))
                     .foregroundStyle(app.tokens.text2)

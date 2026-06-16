@@ -4,18 +4,12 @@ import SwiftUI
 struct QueuePanelView: View {
     @Environment(AppState.self) private var app
 
-    private var manualSongs: [Song] {
-        let byId = app.songsById
-        return app.player.manualQueue.compactMap { byId[$0] }
-    }
-
-    private var upcomingSongs: [Song] {
-        let byId = app.songsById
-        return app.player.upcomingIds.compactMap { byId[$0] }
-    }
-
     var body: some View {
-        let hasUpcoming = !manualSongs.isEmpty || !upcomingSongs.isEmpty
+        let manualIds = app.player.manualQueue
+        let contextIds = app.player.ctx.ids
+        let upcomingStart = min(app.player.ctx.pos + 1, contextIds.count)
+        let upcomingIndices = upcomingStart..<contextIds.count
+        let hasUpcoming = !manualIds.isEmpty || !upcomingIndices.isEmpty
 
         VStack(spacing: 0) {
             // 头部
@@ -37,28 +31,32 @@ struct QueuePanelView: View {
             .padding(.init(top: 16, leading: 18, bottom: 10, trailing: 14))
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     if let current = app.player.currentSong {
                         sectionLabel("正在播放")
                         QueueRow(song: current, isCurrent: true)
 
-                        if !manualSongs.isEmpty {
+                        if !manualIds.isEmpty {
                             sectionLabel("插播 · 下一首播放")
-                            ForEach(Array(manualSongs.enumerated()), id: \.offset) { i, s in
-                                QueueRow(
-                                    song: s, isCurrent: false, removable: true,
-                                    onPlay: { app.player.playManualAt(i) },
-                                    onRemove: { app.player.removeManualAt(i) }
-                                )
+                            ForEach(manualIds.indices, id: \.self) { i in
+                                if let song = app.songsById[manualIds[i]] {
+                                    QueueRow(
+                                        song: song, isCurrent: false, removable: true,
+                                        onPlay: { app.player.playManualAt(i) },
+                                        onRemove: { app.player.removeManualAt(i) }
+                                    )
+                                }
                             }
                         }
-                        if !upcomingSongs.isEmpty {
+                        if !upcomingIndices.isEmpty {
                             sectionLabel("接下来")
-                            ForEach(Array(upcomingSongs.enumerated()), id: \.offset) { i, s in
-                                QueueRow(
-                                    song: s, isCurrent: false,
-                                    onPlay: { app.player.playContextAt(i) }
-                                )
+                            ForEach(upcomingIndices, id: \.self) { index in
+                                if let song = app.songsById[contextIds[index]] {
+                                    QueueRow(
+                                        song: song, isCurrent: false,
+                                        onPlay: { app.player.playContextAt(index - upcomingStart) }
+                                    )
+                                }
                             }
                         }
                         if !hasUpcoming {

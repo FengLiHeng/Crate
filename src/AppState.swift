@@ -114,7 +114,7 @@ final class AppState {
     func markMissing(_ id: String) { missingIds.insert(id) }
     func clearMissing(_ id: String) { missingIds.remove(id) }
 
-    // ── 当前视图歌曲（含搜索过滤，对应 player-app.jsx viewSongs） ──
+    // ── 当前视图歌曲（显示列表含搜索过滤，播放上下文不含搜索过滤） ──
     var viewPlaylist: Playlist? {
         if case .playlist(let id) = view { return playlists.first { $0.id == id } }
         return nil
@@ -127,14 +127,16 @@ final class AppState {
         }
     }
 
-    var viewSongs: [Song] {
-        var list: [Song]
+    var viewPlaybackSongs: [Song] {
         if let pl = viewPlaylist {
             let byId = songsById
-            list = pl.songIds.compactMap { byId[$0] }
-        } else {
-            list = library
+            return pl.songIds.compactMap { byId[$0] }
         }
+        return library
+    }
+
+    var viewSongs: [Song] {
+        var list = viewPlaybackSongs
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
         if !q.isEmpty {
             list = list.filter { s in

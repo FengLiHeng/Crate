@@ -22,6 +22,7 @@ private struct ContentHeader: View {
     var body: some View {
         @Bindable var app = app
         let songs = app.viewSongs
+        let playbackSongs = app.viewPlaybackSongs
 
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 16) {
@@ -71,11 +72,11 @@ private struct ContentHeader: View {
 
             // 播放 / 随机播放
             HStack(spacing: 10) {
-                CapsuleButton(icon: "play.fill", label: "播放", primary: true, disabled: songs.isEmpty) {
-                    app.player.playFrom(songs, index: 0)
+                CapsuleButton(icon: "play.fill", label: "播放", primary: true, disabled: playbackSongs.isEmpty) {
+                    app.player.playFrom(playbackSongs, index: 0)
                 }
-                CapsuleButton(icon: "shuffle", label: "随机播放", primary: false, disabled: songs.isEmpty) {
-                    app.player.playFrom(songs, index: -1, forceShuffle: true)
+                CapsuleButton(icon: "shuffle", label: "随机播放", primary: false, disabled: playbackSongs.isEmpty) {
+                    app.player.playFrom(playbackSongs, index: -1, forceShuffle: true)
                 }
             }
             .padding(.top, 14)

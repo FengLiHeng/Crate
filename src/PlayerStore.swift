@@ -65,6 +65,7 @@ final class PlayerStore {
         let ids = list.map(\.id)
         guard !ids.isEmpty else { return }
         skipVisited.removeAll()
+        manualQueue = []
         let useShuffle = forceShuffle || shuffle
         if forceShuffle && !shuffle { shuffle = true }
         var ordered = ids

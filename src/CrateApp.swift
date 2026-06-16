@@ -5,7 +5,7 @@ struct CrateApp: App {
     @State private var app = AppState()
 
     var body: some Scene {
-        WindowGroup("本地音乐播放器") {
+        WindowGroup("Crate") {
             RootView()
                 .environment(app)
                 .frame(minWidth: 1000, minHeight: 540)

@@ -53,43 +53,67 @@ struct ThemeTokens {
     let accentFg: Color
     let accentSoft: Color
     let thumb: Color
+    let coverPaper: Color
+    let coverPaperShade: Color
+    let coverDisc: Color
+    let coverGroove: Color
+    let coverLabel: Color
+    let coverCenter: Color
+    let coverStroke: Color
+    let coverSheen: Color
 
     static let light = ThemeTokens(
-        winBg: oklch(0.99, 0.002, 80),
-        sidebarBg: oklch(0.966, 0.004, 80),
-        panelBg: oklch(0.975, 0.003, 80),
-        playbarBg: oklch(0.978, 0.003, 80),
-        menuBg: oklch(0.975, 0.003, 80, 0.92),
-        text: oklch(0.21, 0.005, 80),
-        text2: oklch(0.47, 0.008, 80),
-        text3: oklch(0.62, 0.008, 80),
-        sep: oklch(0.25, 0.01, 80, 0.1),
-        hover: oklch(0.3, 0.01, 80, 0.05),
-        selected: oklch(0.3, 0.02, 80, 0.09),
-        ctrl: oklch(0.3, 0.01, 80, 0.06),
-        accent: oklch(0.6, 0.19, 30),
+        winBg: oklch(0.988, 0.004, 145),
+        sidebarBg: oklch(0.958, 0.007, 145),
+        panelBg: oklch(0.968, 0.006, 145),
+        playbarBg: oklch(0.972, 0.006, 145),
+        menuBg: oklch(0.972, 0.006, 145, 0.92),
+        text: oklch(0.22, 0.01, 160),
+        text2: oklch(0.46, 0.012, 160),
+        text3: oklch(0.61, 0.012, 160),
+        sep: oklch(0.25, 0.014, 160, 0.1),
+        hover: oklch(0.3, 0.018, 160, 0.055),
+        selected: oklch(0.3, 0.024, 160, 0.095),
+        ctrl: oklch(0.3, 0.018, 160, 0.065),
+        accent: oklch(0.52, 0.095, 178),
         accentFg: .white,
-        accentSoft: oklch(0.6, 0.19, 30, 0.11),
-        thumb: .white
+        accentSoft: oklch(0.52, 0.095, 178, 0.13),
+        thumb: .white,
+        coverPaper: oklch(0.915, 0.012, 135),
+        coverPaperShade: oklch(0.84, 0.018, 150, 0.72),
+        coverDisc: oklch(0.29, 0.012, 210),
+        coverGroove: oklch(0.92, 0.004, 120, 0.2),
+        coverLabel: oklch(0.72, 0.04, 62),
+        coverCenter: oklch(0.2, 0.01, 210),
+        coverStroke: oklch(0.22, 0.018, 160, 0.16),
+        coverSheen: .white.opacity(0.2)
     )
 
     static let dark = ThemeTokens(
-        winBg: oklch(0.215, 0.005, 270),
-        sidebarBg: oklch(0.25, 0.006, 270),
-        panelBg: oklch(0.24, 0.006, 270),
-        playbarBg: oklch(0.235, 0.006, 270),
-        menuBg: oklch(0.29, 0.007, 270, 0.94),
-        text: oklch(0.94, 0.003, 80),
-        text2: oklch(0.72, 0.005, 80),
-        text3: oklch(0.56, 0.005, 80),
-        sep: oklch(0.95, 0.01, 80, 0.09),
-        hover: oklch(0.9, 0.01, 80, 0.06),
-        selected: oklch(0.9, 0.01, 80, 0.1),
-        ctrl: oklch(0.9, 0.01, 80, 0.08),
-        accent: oklch(0.67, 0.18, 30),
+        winBg: oklch(0.215, 0.008, 205),
+        sidebarBg: oklch(0.25, 0.009, 205),
+        panelBg: oklch(0.238, 0.009, 205),
+        playbarBg: oklch(0.232, 0.009, 205),
+        menuBg: oklch(0.29, 0.01, 205, 0.94),
+        text: oklch(0.94, 0.004, 145),
+        text2: oklch(0.72, 0.006, 145),
+        text3: oklch(0.56, 0.006, 145),
+        sep: oklch(0.95, 0.01, 145, 0.09),
+        hover: oklch(0.9, 0.012, 145, 0.06),
+        selected: oklch(0.9, 0.014, 145, 0.1),
+        ctrl: oklch(0.9, 0.012, 145, 0.08),
+        accent: oklch(0.71, 0.095, 178),
         accentFg: .white,
-        accentSoft: oklch(0.67, 0.18, 30, 0.16),
-        thumb: oklch(0.92, 0.003, 80)
+        accentSoft: oklch(0.71, 0.095, 178, 0.17),
+        thumb: oklch(0.92, 0.004, 145),
+        coverPaper: oklch(0.31, 0.012, 195),
+        coverPaperShade: oklch(0.24, 0.014, 205, 0.78),
+        coverDisc: oklch(0.16, 0.01, 220),
+        coverGroove: oklch(0.9, 0.004, 145, 0.18),
+        coverLabel: oklch(0.56, 0.04, 62),
+        coverCenter: oklch(0.11, 0.008, 220),
+        coverStroke: oklch(0.95, 0.006, 145, 0.13),
+        coverSheen: .white.opacity(0.1)
     )
 
     static func of(_ theme: AppTheme) -> ThemeTokens {
@@ -97,19 +121,18 @@ struct ThemeTokens {
     }
 }
 
-// MARK: - 封面渐变（player-ui.jsx Cover 的等价实现）
+// MARK: - 封面占位与播放条氛围色
 
 extension Album {
-    var coverGradient: LinearGradient {
-        LinearGradient(
-            colors: [oklch(0.7, 0.14, h1), oklch(0.4, 0.13, h2)],
-            startPoint: .topLeading, endPoint: .bottomTrailing
-        )
+    func coverAccent(theme: AppTheme, alpha: Double = 1) -> Color {
+        oklch(theme == .dark ? 0.66 : 0.55, theme == .dark ? 0.065 : 0.08, h1, alpha)
+    }
+
+    func coverAccentSoft(theme: AppTheme, alpha: Double = 1) -> Color {
+        oklch(theme == .dark ? 0.56 : 0.78, theme == .dark ? 0.055 : 0.05, h2, alpha)
+    }
+
+    func playbarAmbient(theme: AppTheme, hue: Double, alpha: Double) -> Color {
+        oklch(theme == .dark ? 0.58 : 0.68, theme == .dark ? 0.05 : 0.045, hue, alpha)
     }
 }
-
-/// 无专辑时的灰色封面渐变
-let idleCoverGradient = LinearGradient(
-    colors: [oklch(0.55, 0.006, 80), oklch(0.36, 0.006, 80)],
-    startPoint: .topLeading, endPoint: .bottomTrailing
-)

@@ -20,6 +20,7 @@ struct SongTableView: View {
 
     var body: some View {
         let songs = app.viewSongs
+        let playbackSongs = app.viewPlaybackSongs
         GeometryReader { geo in
             let cols = ColumnWidths(total: geo.size.width - 32)
             if songs.isEmpty {
@@ -34,7 +35,8 @@ struct SongTableView: View {
                         Section {
                             ForEach(Array(songs.enumerated()), id: \.element.id) { i, song in
                                 SongRow(song: song, index: i, cols: cols) {
-                                    app.player.playFrom(songs, index: i, rotateFromIndex: true)
+                                    let playbackIndex = playbackSongs.firstIndex { $0.id == song.id } ?? 0
+                                    app.player.playFrom(playbackSongs, index: playbackIndex, rotateFromIndex: true)
                                 }
                             }
                         } header: {
@@ -190,7 +192,7 @@ private struct SongContextMenu: View {
 
     var body: some View {
         Button("立即播放") { app.player.playSongNow(song) }
-        Button("下一首播放") { app.player.playNextSong(song) }
+        Button("添加到下一首播放") { app.player.playNextSong(song) }
         Button("添加到待播清单") { app.player.addToQueue(song) }
         Divider()
         if !addablePlaylists.isEmpty {

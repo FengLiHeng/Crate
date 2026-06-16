@@ -3,7 +3,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-swift build -c release --arch arm64
+SWIFT_BUILD_FLAGS_ARRAY=()
+if [[ -n "${SWIFT_BUILD_FLAGS:-}" ]]; then
+    # 允许受限环境传入 --disable-sandbox 等 SwiftPM 构建参数；默认不改变本地打包行为。
+    SWIFT_BUILD_FLAGS_ARRAY=(${SWIFT_BUILD_FLAGS})
+fi
+swift build "${SWIFT_BUILD_FLAGS_ARRAY[@]}" -c release --arch arm64
 
 APP="build/Crate.app"
 BIN=".build/arm64-apple-macosx/release/Crate"
@@ -65,9 +70,9 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <key>CFBundleIdentifier</key>
     <string>com.crate.player</string>
     <key>CFBundleName</key>
-    <string>本地音乐播放器</string>
+    <string>Crate</string>
     <key>CFBundleDisplayName</key>
-    <string>本地音乐播放器</string>
+    <string>Crate</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>

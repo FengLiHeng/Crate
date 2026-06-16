@@ -5,9 +5,9 @@ struct Album: Identifiable, Codable, Hashable {
     var title: String
     var artist: String
     var year: Int
-    /// 导入音频内嵌封面；缺失时由 UI 使用渐变占位符
+    /// 导入音频内嵌封面；缺失时由 UI 使用统一占位符
     var artworkData: Data? = nil
-    /// 封面渐变的两个 OKLCH 色相（与设计稿 music-data.js 的 h1/h2 一致）
+    /// 封面占位符与播放条氛围色的两个 OKLCH 色相
     var h1: Double
     var h2: Double
 }

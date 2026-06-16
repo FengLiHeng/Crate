@@ -1,13 +1,15 @@
 import SwiftUI
 import AppKit
 
-// MARK: - 专辑封面（渐变占位 + 音符，player-ui.jsx Cover）
+// MARK: - 专辑封面（真实封面 + 统一占位符）
 
 struct CoverView: View {
     var song: Song? = nil
     var album: Album? = nil
     var size: CGFloat = 36
     var radius: CGFloat = 6
+
+    @Environment(AppState.self) private var app
 
     private var artworkImage: NSImage? {
         if let data = song?.artworkData, let image = NSImage(data: data) {
@@ -26,22 +28,12 @@ struct CoverView: View {
                     .resizable()
                     .scaledToFill()
             } else {
-                ZStack {
-                    if let album {
-                        Rectangle().fill(album.coverGradient)
-                    } else {
-                        Rectangle().fill(idleCoverGradient)
-                    }
-                    Image(systemName: "music.note")
-                        .font(.system(size: size * 0.4, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.45))
-                }
+                CoverPlaceholderView(album: album)
             }
-            // 左上高光（.cover::after）
             LinearGradient(
                 stops: [
-                    .init(color: .white.opacity(0.2), location: 0),
-                    .init(color: .clear, location: 0.45),
+                    .init(color: app.tokens.coverSheen, location: 0),
+                    .init(color: .clear, location: 0.42),
                 ],
                 startPoint: .topLeading, endPoint: .bottomTrailing
             )
@@ -50,9 +42,82 @@ struct CoverView: View {
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .strokeBorder(.black.opacity(0.12), lineWidth: 0.5)
+                .strokeBorder(app.tokens.coverStroke, lineWidth: 0.6)
         )
-        .shadow(color: .black.opacity(0.12), radius: 1.5, y: 1)
+        .shadow(color: .black.opacity(app.theme == .dark ? 0.28 : 0.14), radius: 1.6, y: 1)
+    }
+}
+
+private struct CoverPlaceholderView: View {
+    var album: Album?
+
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        GeometryReader { geo in
+            let side = min(geo.size.width, geo.size.height)
+            let accent = album?.coverAccent(theme: app.theme) ?? app.tokens.accent
+            let accentSoft = album?.coverAccentSoft(theme: app.theme, alpha: app.theme == .dark ? 0.48 : 0.62)
+                ?? app.tokens.accentSoft
+            let labelFill = album?.coverAccentSoft(theme: app.theme, alpha: app.theme == .dark ? 0.74 : 0.9)
+                ?? app.tokens.coverLabel
+            let labelStroke = album?.coverAccent(theme: app.theme, alpha: 0.48) ?? app.tokens.coverStroke
+
+            ZStack {
+                Rectangle().fill(app.tokens.coverPaper)
+
+                Rectangle()
+                    .fill(app.tokens.coverPaperShade)
+                    .frame(width: side * 0.9, height: side * 0.9)
+                    .rotationEffect(.degrees(-8))
+                    .offset(x: side * 0.18, y: side * 0.16)
+
+                HStack(spacing: 0) {
+                    Rectangle()
+                        .fill(accent.opacity(app.theme == .dark ? 0.72 : 0.86))
+                        .frame(width: max(3, side * 0.12))
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                Rectangle()
+                    .fill(accentSoft)
+                    .frame(width: max(10, side * 0.3), height: side * 1.3)
+                    .rotationEffect(.degrees(18))
+                    .offset(x: side * 0.38)
+
+                Circle()
+                    .fill(app.tokens.coverDisc)
+                    .frame(width: side * 0.68, height: side * 0.68)
+                    .shadow(color: .black.opacity(app.theme == .dark ? 0.28 : 0.16), radius: 1, y: 0.5)
+
+                Circle()
+                    .stroke(app.tokens.coverGroove, lineWidth: max(0.5, side * 0.016))
+                    .frame(width: side * 0.57, height: side * 0.57)
+
+                Circle()
+                    .stroke(app.tokens.coverGroove.opacity(0.72), lineWidth: max(0.5, side * 0.012))
+                    .frame(width: side * 0.43, height: side * 0.43)
+
+                Circle()
+                    .fill(labelFill)
+                    .frame(width: side * 0.32, height: side * 0.32)
+                    .overlay(
+                        Circle()
+                            .stroke(labelStroke, lineWidth: max(0.5, side * 0.012))
+                    )
+
+                Circle()
+                    .fill(app.tokens.coverCenter)
+                    .frame(width: max(3, side * 0.08), height: max(3, side * 0.08))
+
+                if side >= 46 {
+                    Image(systemName: "music.note")
+                        .font(.system(size: side * 0.16, weight: .semibold))
+                        .foregroundStyle(app.tokens.coverCenter.opacity(0.58))
+                }
+            }
+        }
     }
 }
 
@@ -64,6 +129,8 @@ struct PlaylistCoverView: View {
     var songsById: [String: Song]
     var size: CGFloat = 36
     var radius: CGFloat = 6
+
+    @Environment(AppState.self) private var app
 
     private var mosaicAlbums: [Album] {
         var result: [Album] = []
@@ -82,22 +149,53 @@ struct PlaylistCoverView: View {
         } else {
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
-                    Rectangle().fill(albs[0].coverGradient)
-                    Rectangle().fill(albs[1].coverGradient)
+                    AlbumCoverTile(album: albs[0])
+                    AlbumCoverTile(album: albs[1])
                 }
                 HStack(spacing: 0) {
-                    Rectangle().fill(albs[2].coverGradient)
-                    Rectangle().fill(albs[3].coverGradient)
+                    AlbumCoverTile(album: albs[2])
+                    AlbumCoverTile(album: albs[3])
                 }
             }
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(.black.opacity(0.12), lineWidth: 0.5)
+                    .strokeBorder(app.tokens.coverStroke, lineWidth: 0.6)
             )
-            .shadow(color: .black.opacity(0.12), radius: 1.5, y: 1)
+            .shadow(color: .black.opacity(app.theme == .dark ? 0.28 : 0.14), radius: 1.6, y: 1)
         }
+    }
+}
+
+private struct AlbumCoverTile: View {
+    var album: Album
+
+    @Environment(AppState.self) private var app
+
+    private var artworkImage: NSImage? {
+        guard let data = album.artworkData else { return nil }
+        return NSImage(data: data)
+    }
+
+    var body: some View {
+        ZStack {
+            if let artworkImage {
+                Image(nsImage: artworkImage)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                CoverPlaceholderView(album: album)
+            }
+            LinearGradient(
+                stops: [
+                    .init(color: app.tokens.coverSheen, location: 0),
+                    .init(color: .clear, location: 0.42),
+                ],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        }
+        .clipped()
     }
 }
 
