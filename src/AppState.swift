@@ -20,7 +20,44 @@ enum GroupNameValidation {
 final class AppState {
     static let favoritesGroupId = "system-favorites"
     static let favoritesGroupName = "我的收藏"
+    static var storeDirectoryOverride: URL?
+
     private static let persistenceQueue = DispatchQueue(label: "com.crate.library-persistence", qos: .utility)
+    private static let maxArtworkDataSize = 512 * 1024
+    private static let maxArtworkPixelLength = 640
+
+    private struct ImportAlbumKey: Hashable {
+        var title: String
+        var artist: String
+    }
+
+    private struct AlbumArtworkUpdate {
+        var albumId: String
+        var artworkData: Data
+    }
+
+    private struct ImportResult {
+        var songs: [Song] = []
+        var newAlbums: [Album] = []
+        var albumArtworkUpdates: [AlbumArtworkUpdate] = []
+        var skippedExisting = 0
+        var skippedBroken = 0
+    }
+
+    private struct ParsedMetadata {
+        var title: String
+        var artist: String?
+        var albumName: String?
+        var duration: Double
+        var embeddedArtworkData: Data?
+        var sidecarArtworkData: Data?
+    }
+
+    private struct BackfilledArtwork {
+        var songId: String
+        var path: String
+        var artworkData: Data
+    }
 
     // ── 主题（持久化键与设计稿 localStorage 对齐） ──
     var theme: AppTheme {
@@ -67,16 +104,30 @@ final class AppState {
     @ObservationIgnored private var pendingPersistenceSnapshot: PersistedLibrary?
     @ObservationIgnored private var persistenceGeneration = 0
     @ObservationIgnored private var persistenceDrainScheduled = false
+    @ObservationIgnored private var persistenceFailureReported = false
+    @ObservationIgnored private var persistenceProtectionActive = false
 
     init() {
         let savedTheme = UserDefaults.standard.string(forKey: "lmp-theme")
         theme = AppTheme(rawValue: savedTheme ?? "") ?? .light
 
-        if let data = try? Data(contentsOf: Self.storeURL),
-           let persisted = try? JSONDecoder().decode(PersistedLibrary.self, from: data) {
-            albums = persisted.albums
-            library = persisted.songs
-            playlists = Self.normalizedSystemGroups(persisted.playlists)
+        let storeURL = Self.storeURL
+        let hasPersistedLibrary = FileManager.default.fileExists(atPath: storeURL.path)
+        var loadFailed = false
+        if hasPersistedLibrary {
+            do {
+                let data = try Data(contentsOf: storeURL)
+                let persisted = try JSONDecoder().decode(PersistedLibrary.self, from: data)
+                albums = persisted.albums
+                library = persisted.songs
+                playlists = Self.normalizedSystemGroups(persisted.playlists)
+            } catch {
+                loadFailed = true
+                persistenceProtectionActive = true
+                albums = []
+                library = []
+                playlists = Self.normalizedSystemGroups([])
+            }
         } else {
             albums = []
             library = []
@@ -86,7 +137,11 @@ final class AppState {
         // init 中赋值不触发 didSet，手动建一次索引
         albumsById = Dictionary(uniqueKeysWithValues: albums.map { ($0.id, $0) })
         songsById = Dictionary(uniqueKeysWithValues: library.map { ($0.id, $0) })
-        persist()
+        if loadFailed {
+            showToast("曲库读取失败，已暂时以空资料库启动")
+        } else {
+            persist()
+        }
         backfillSidecarArtwork()
 
         player.songProvider = { [weak self] id in self?.songsById[id] }
@@ -98,7 +153,7 @@ final class AppState {
     }
 
     func flushPersistence() {
-        guard loaded else { return }
+        guard loaded, !persistenceProtectionActive else { return }
         let snapshot = currentPersistenceSnapshot
         persistenceLock.lock()
         pendingPersistenceSnapshot = snapshot
@@ -106,7 +161,12 @@ final class AppState {
         persistenceLock.unlock()
 
         Self.persistenceQueue.sync { [weak self] in
-            Self.writePersistenceSnapshot(snapshot)
+            do {
+                try Self.writePersistenceSnapshot(snapshot)
+                self?.markPersistenceWriteSucceeded()
+            } catch {
+                self?.reportPersistenceWriteFailure(error)
+            }
             guard let self else { return }
             self.persistenceLock.lock()
             self.pendingPersistenceSnapshot = snapshot
@@ -119,19 +179,28 @@ final class AppState {
 
     /// 后台遍历曲库，标记文件已不存在的导入曲目；拔/插盘后重启重扫即自洽
     func probeAvailability() {
-        let snapshot: [(String, String)] = library.compactMap { song in
+        let snapshot = Dictionary(uniqueKeysWithValues: library.compactMap { song in
             song.fileURL.map { (song.id, $0.path) }
-        }
-        Task.detached(priority: .utility) { [weak self] in
+        })
+        Task.detached(priority: .utility) { [weak self, snapshot] in
             var missing: Set<String> = []
             for (id, path) in snapshot where !FileManager.default.fileExists(atPath: path) {
                 missing.insert(id)
             }
-            await self?.applyMissing(missing)
+            await self?.applyMissing(missing, for: snapshot)
         }
     }
 
-    @MainActor private func applyMissing(_ ids: Set<String>) { missingIds = ids }
+    @MainActor private func applyMissing(_ ids: Set<String>, for snapshot: [String: String]) {
+        let currentPaths = Dictionary(uniqueKeysWithValues: library.compactMap { song in
+            song.fileURL.map { (song.id, $0.path) }
+        })
+        let currentIds = Set(currentPaths.keys)
+        let stillMissing = ids.filter { id in
+            currentPaths[id] == snapshot[id]
+        }
+        missingIds = missingIds.intersection(currentIds).union(stillMissing)
+    }
 
     func markMissing(_ id: String) { missingIds.insert(id) }
     func clearMissing(_ id: String) { missingIds.remove(id) }
@@ -195,6 +264,7 @@ final class AppState {
     }
 
     func toggleFavorite(_ song: Song) {
+        allowPersistenceAfterUserChange()
         if isFavorite(song) {
             updatePlaylists { groups in
                 groups.map { group in
@@ -263,6 +333,7 @@ final class AppState {
     @discardableResult
     func createGroup(named rawName: String) -> Playlist? {
         guard groupNameError(rawName) == nil else { return nil }
+        allowPersistenceAfterUserChange()
         let name = normalizedGroupName(rawName)
         let group = Playlist(id: "grp-" + UUID().uuidString, name: name, songIds: [])
         updatePlaylists { $0 + [group] }
@@ -274,6 +345,7 @@ final class AppState {
     func renameGroup(_ groupId: String, to rawName: String) -> Bool {
         guard !Self.isFavoritesGroupId(groupId) else { return false }
         guard groupNameError(rawName, excluding: groupId) == nil else { return false }
+        allowPersistenceAfterUserChange()
         let name = normalizedGroupName(rawName)
         var renamed = false
         updatePlaylists { groups in
@@ -293,6 +365,7 @@ final class AppState {
     func deleteGroup(_ groupId: String) {
         guard !Self.isFavoritesGroupId(groupId) else { return }
         guard let group = playlists.first(where: { $0.id == groupId }) else { return }
+        allowPersistenceAfterUserChange()
         updatePlaylists { groups in groups.filter { $0.id != groupId } }
         if case .playlist(let id) = view, id == groupId {
             view = .library
@@ -303,6 +376,7 @@ final class AppState {
     func moveGroup(_ groupId: String, to destinationIndex: Int) {
         guard !Self.isFavoritesGroupId(groupId) else { return }
         guard let sourceIndex = playlists.firstIndex(where: { $0.id == groupId }) else { return }
+        allowPersistenceAfterUserChange()
         var updated = playlists
         let moved = updated.remove(at: sourceIndex)
         let safeIndex = Swift.min(Swift.max(destinationIndex, 1), updated.count)
@@ -316,6 +390,7 @@ final class AppState {
             showToast("「\(song.title)」已在分组「\(current.name)」中")
             return
         }
+        allowPersistenceAfterUserChange()
         updatePlaylists { groups in
             groups.map { group in
                 var group = group
@@ -327,6 +402,7 @@ final class AppState {
     }
 
     func removeSong(_ song: Song) {
+        allowPersistenceAfterUserChange()
         library.removeAll { $0.id == song.id }
         updatePlaylists { groups in
             groups.map { group in
@@ -341,6 +417,7 @@ final class AppState {
 
     func removeSong(_ song: Song, from playlist: Playlist) {
         guard playlists.contains(where: { $0.id == playlist.id && $0.songIds.contains(song.id) }) else { return }
+        allowPersistenceAfterUserChange()
         updatePlaylists { groups in
             groups.map { group in
                 var group = group
@@ -360,6 +437,7 @@ final class AppState {
         let count = library.count
         guard count > 0 else { return }
 
+        allowPersistenceAfterUserChange()
         player.resetPlaybackSession()
         albums = []
         library = []
@@ -386,6 +464,11 @@ final class AppState {
         panel.prompt = "重新定位"
         guard panel.runModal() == .OK, let newURL = panel.urls.first else { return }
         guard let oldURL = song.fileURL else { return }
+        guard Self.canDecodeAudio(at: newURL) else {
+            showToast("所选文件不可播放")
+            return
+        }
+        allowPersistenceAfterUserChange()
 
         let oldDir = oldURL.deletingLastPathComponent().standardizedFileURL.path
         let newDir = newURL.deletingLastPathComponent()
@@ -403,7 +486,7 @@ final class AppState {
             guard missingIds.contains(s.id), let sURL = s.fileURL,
                   sURL.deletingLastPathComponent().standardizedFileURL.path == oldDir else { continue }
             let candidate = newDir.appendingPathComponent(sURL.lastPathComponent)
-            if FileManager.default.fileExists(atPath: candidate.path) {
+            if Self.canDecodeAudio(at: candidate) {
                 updated[i].fileURL = candidate
                 clearMissing(s.id)
                 fixed += 1
@@ -417,6 +500,7 @@ final class AppState {
     func cleanupMissing() {
         let ids = missingIds
         guard !ids.isEmpty else { return }
+        allowPersistenceAfterUserChange()
         let count = ids.count
         library.removeAll { ids.contains($0.id) }
         updatePlaylists { groups in
@@ -441,7 +525,12 @@ final class AppState {
 
     // ── 导入（spec: library-import） ──
 
-    static let audioExtensions: Set<String> = ["mp3", "m4a", "flac", "wav", "aac", "ogg", "aiff"]
+    static let audioExtensions: Set<String> = ["mp3", "m4a", "flac", "wav", "aac", "aiff"]
+
+    static func canDecodeAudio(at url: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        return (try? AVAudioPlayer(contentsOf: url)) != nil
+    }
 
     func importViaPanel() {
         let panel = NSOpenPanel()
@@ -486,45 +575,151 @@ final class AppState {
             showToast("未发现可导入的音频文件")
             return
         }
-        Task { @MainActor in
-            var newSongs: [Song] = []
-            var skippedExisting = 0
-            var skippedBroken = 0
-            let existingPaths = Set(library.compactMap { $0.fileURL?.standardizedFileURL.path })
-
-            for url in audioURLs {
-                let path = url.standardizedFileURL.path
-                if existingPaths.contains(path) || newSongs.contains(where: { $0.fileURL?.standardizedFileURL.path == path }) {
-                    skippedExisting += 1
-                    continue
-                }
-                // 校验可解码（design.md 风险项）
-                guard (try? AVAudioPlayer(contentsOf: url)) != nil else {
-                    skippedBroken += 1
-                    continue
-                }
-                if let song = await parseMetadata(url: url) {
-                    newSongs.append(song)
-                }
-            }
-
-            if !newSongs.isEmpty {
-                library.append(contentsOf: newSongs)
-                view = .library
-                var msg = "已导入 \(newSongs.count) 首歌曲"
-                if skippedExisting > 0 { msg += "，跳过 \(skippedExisting) 首已存在" }
-                if skippedBroken > 0 { msg += "，\(skippedBroken) 个文件无法解码" }
-                showToast(msg)
-            } else if skippedExisting > 0 {
-                showToast("文件已在资料库中")
-            } else {
-                showToast("未发现可导入的音频文件")
-            }
+        let existingPaths = Set(library.compactMap { $0.fileURL?.standardizedFileURL.path })
+        let albumsSnapshot = albums
+        Task.detached(priority: .userInitiated) { [weak self, audioURLs, existingPaths, albumsSnapshot] in
+            let result = await Self.buildImportResult(
+                urls: audioURLs,
+                existingPaths: existingPaths,
+                albums: albumsSnapshot
+            )
+            await self?.applyImportResult(result)
         }
     }
 
+    @MainActor private func applyImportResult(_ result: ImportResult) {
+        let currentPaths = Set(library.compactMap { $0.fileURL?.standardizedFileURL.path })
+        let songsToAdd = result.songs.filter { song in
+            guard let path = song.fileURL?.standardizedFileURL.path else { return true }
+            return !currentPaths.contains(path)
+        }
+        let skippedExisting = result.skippedExisting + (result.songs.count - songsToAdd.count)
+
+        if !songsToAdd.isEmpty {
+            allowPersistenceAfterUserChange()
+            if !result.albumArtworkUpdates.isEmpty {
+                var updatedAlbums = albums
+                for update in result.albumArtworkUpdates {
+                    guard let index = updatedAlbums.firstIndex(where: { $0.id == update.albumId }),
+                          updatedAlbums[index].artworkData == nil else { continue }
+                    updatedAlbums[index].artworkData = update.artworkData
+                }
+                albums = updatedAlbums
+            }
+            if !result.newAlbums.isEmpty {
+                let existingAlbumIds = Set(albums.map(\.id))
+                albums.append(contentsOf: result.newAlbums.filter { !existingAlbumIds.contains($0.id) })
+            }
+            library.append(contentsOf: songsToAdd)
+            for song in songsToAdd {
+                clearMissing(song.id)
+            }
+            view = .library
+            var msg = "已导入 \(songsToAdd.count) 首歌曲"
+            if skippedExisting > 0 { msg += "，跳过 \(skippedExisting) 首已存在" }
+            if result.skippedBroken > 0 { msg += "，\(result.skippedBroken) 个文件无法解码" }
+            showToast(msg)
+        } else if skippedExisting > 0 {
+            showToast("文件已在资料库中")
+        } else {
+            showToast("未发现可导入的音频文件")
+        }
+    }
+
+    private static func buildImportResult(urls: [URL], existingPaths: Set<String>, albums: [Album]) async -> ImportResult {
+        var result = ImportResult()
+        var seenPaths = Set<String>()
+        var albumIdsByKey: [ImportAlbumKey: String] = [:]
+        for album in albums {
+            let key = ImportAlbumKey(title: album.title, artist: album.artist)
+            if albumIdsByKey[key] == nil {
+                albumIdsByKey[key] = album.id
+            }
+        }
+        var albumsById = Dictionary(uniqueKeysWithValues: albums.map { ($0.id, $0) })
+
+        for url in urls {
+            let path = url.standardizedFileURL.path
+            guard !existingPaths.contains(path), seenPaths.insert(path).inserted else {
+                result.skippedExisting += 1
+                continue
+            }
+            guard canDecodeAudio(at: url) else {
+                result.skippedBroken += 1
+                continue
+            }
+            guard let metadata = await parseMetadata(url: url) else {
+                result.skippedBroken += 1
+                continue
+            }
+
+            var albumId: String?
+            let artworkData = metadata.embeddedArtworkData ?? metadata.sidecarArtworkData
+            if let albumName = metadata.albumName?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !albumName.isEmpty {
+                let artist = metadata.artist ?? "未知艺人"
+                albumId = albumIdForImport(
+                    title: albumName,
+                    artist: artist,
+                    artworkData: artworkData,
+                    albumIdsByKey: &albumIdsByKey,
+                    albumsById: &albumsById,
+                    result: &result
+                )
+            }
+
+            result.songs.append(Song(
+                id: "imp-" + UUID().uuidString,
+                title: metadata.title,
+                artist: metadata.artist,
+                albumId: albumId,
+                duration: metadata.duration,
+                fileURL: url,
+                artworkData: metadata.sidecarArtworkData ?? (albumId == nil ? metadata.embeddedArtworkData : nil)
+            ))
+        }
+
+        return result
+    }
+
+    private static func albumIdForImport(
+        title: String,
+        artist: String,
+        artworkData: Data?,
+        albumIdsByKey: inout [ImportAlbumKey: String],
+        albumsById: inout [String: Album],
+        result: inout ImportResult
+    ) -> String {
+        let key = ImportAlbumKey(title: title, artist: artist)
+        if let albumId = albumIdsByKey[key] {
+            if albumsById[albumId]?.artworkData == nil, let artworkData {
+                albumsById[albumId]?.artworkData = artworkData
+                result.albumArtworkUpdates.append(AlbumArtworkUpdate(albumId: albumId, artworkData: artworkData))
+            }
+            return albumId
+        }
+
+        var hash: UInt64 = 5381
+        for b in (title + artist).utf8 { hash = hash &* 33 &+ UInt64(b) }
+        let h1 = Double(hash % 360)
+        let h2 = (h1 + 40).truncatingRemainder(dividingBy: 360)
+        let album = Album(
+            id: "alb-" + UUID().uuidString,
+            title: title,
+            artist: artist,
+            year: Calendar.current.component(.year, from: .now),
+            artworkData: artworkData,
+            h1: h1,
+            h2: h2
+        )
+        albumIdsByKey[key] = album.id
+        albumsById[album.id] = album
+        result.newAlbums.append(album)
+        return album.id
+    }
+
     /// 读取元数据：标题/艺术家/专辑/真实时长/封面，缺失回退（spec: 元数据解析）
-    private func parseMetadata(url: URL) async -> Song? {
+    private static func parseMetadata(url: URL) async -> ParsedMetadata? {
         let asset = AVURLAsset(url: url)
         var title = url.deletingPathExtension().lastPathComponent
         var artist: String?
@@ -549,8 +744,8 @@ final class AppState {
                 case .commonKeyArtwork:
                     if artworkData == nil,
                        let data = try? await item.load(.dataValue),
-                       Self.isValidArtworkData(data) {
-                        artworkData = data
+                       let prepared = Self.preparedArtworkData(data) {
+                        artworkData = prepared
                     }
                 default: break
                 }
@@ -561,24 +756,61 @@ final class AppState {
             artworkData = sidecarArtworkData
         }
 
-        var albumId: String?
-        if let albumName, !albumName.isEmpty {
-            albumId = findOrCreateAlbum(title: albumName, artist: artist ?? "未知艺人", artworkData: artworkData)
-        }
-
-        return Song(
-            id: "imp-" + UUID().uuidString,
+        return ParsedMetadata(
             title: title,
             artist: artist,
-            albumId: albumId,
+            albumName: albumName,
             duration: duration,
-            fileURL: url,
-            artworkData: sidecarArtworkData ?? (albumId == nil ? artworkData : nil)
+            embeddedArtworkData: artworkData,
+            sidecarArtworkData: sidecarArtworkData
         )
     }
 
     private static func isValidArtworkData(_ data: Data) -> Bool {
         !data.isEmpty && NSImage(data: data) != nil
+    }
+
+    private static func preparedArtworkData(_ data: Data) -> Data? {
+        guard !data.isEmpty, let image = NSImage(data: data) else { return nil }
+        let pixelSize = image.representations.reduce(CGSize(width: image.size.width, height: image.size.height)) { best, rep in
+            let repSize = CGSize(width: rep.pixelsWide, height: rep.pixelsHigh)
+            return repSize.width * repSize.height > best.width * best.height ? repSize : best
+        }
+        let longestSide = max(pixelSize.width, pixelSize.height)
+        if data.count <= maxArtworkDataSize, longestSide <= CGFloat(maxArtworkPixelLength) {
+            return data
+        }
+
+        let scale = longestSide > 0 ? min(1, CGFloat(maxArtworkPixelLength) / longestSide) : 1
+        let targetWidth = max(1, Int((pixelSize.width * scale).rounded()))
+        let targetHeight = max(1, Int((pixelSize.height * scale).rounded()))
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: targetWidth,
+            pixelsHigh: targetHeight,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else { return nil }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(
+            in: NSRect(x: 0, y: 0, width: targetWidth, height: targetHeight),
+            from: .zero,
+            operation: .copy,
+            fraction: 1
+        )
+        NSGraphicsContext.restoreGraphicsState()
+
+        guard let jpegData = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.82]),
+              jpegData.count <= maxArtworkDataSize,
+              isValidArtworkData(jpegData) else { return nil }
+        return jpegData
     }
 
     private static func sidecarArtworkData(for audioURL: URL) -> Data? {
@@ -588,8 +820,8 @@ final class AppState {
             let imageURL = baseURL.appendingPathExtension(ext)
             guard FileManager.default.fileExists(atPath: imageURL.path),
                   let data = try? Data(contentsOf: imageURL),
-                  isValidArtworkData(data) else { continue }
-            return data
+                  let prepared = preparedArtworkData(data) else { continue }
+            return prepared
         }
         return nil
     }
@@ -618,42 +850,36 @@ final class AppState {
     }
 
     private func backfillSidecarArtwork() {
+        let snapshot: [(String, URL, String)] = library.compactMap { song in
+            guard song.artworkData == nil, let fileURL = song.fileURL else { return nil }
+            return (song.id, fileURL, fileURL.standardizedFileURL.path)
+        }
+        guard !snapshot.isEmpty else { return }
+        Task.detached(priority: .utility) { [weak self, snapshot] in
+            let backfills = snapshot.compactMap { id, fileURL, path -> BackfilledArtwork? in
+                guard let data = Self.sidecarArtworkData(for: fileURL) else { return nil }
+                return BackfilledArtwork(songId: id, path: path, artworkData: data)
+            }
+            await self?.applyBackfilledArtwork(backfills)
+        }
+    }
+
+    @MainActor private func applyBackfilledArtwork(_ backfills: [BackfilledArtwork]) {
+        guard !backfills.isEmpty else { return }
+        let dataById = Dictionary(uniqueKeysWithValues: backfills.map { ($0.songId, $0) })
         var updated = library
         var changed = false
         for index in updated.indices {
             guard updated[index].artworkData == nil,
                   let fileURL = updated[index].fileURL,
-                  let data = Self.sidecarArtworkData(for: fileURL) else { continue }
-            updated[index].artworkData = data
+                  let backfill = dataById[updated[index].id],
+                  fileURL.standardizedFileURL.path == backfill.path else { continue }
+            updated[index].artworkData = backfill.artworkData
             changed = true
         }
         if changed {
             library = updated
         }
-    }
-
-    /// 按专辑名+艺人复用或创建专辑，封面色相由名称稳定散列生成
-    private func findOrCreateAlbum(title: String, artist: String, artworkData: Data?) -> String {
-        if let index = albums.firstIndex(where: { $0.title == title && $0.artist == artist }) {
-            let existing = albums[index]
-            if existing.artworkData == nil, let artworkData {
-                albums[index].artworkData = artworkData
-            }
-            return existing.id
-        }
-        var hash: UInt64 = 5381
-        for b in (title + artist).utf8 { hash = hash &* 33 &+ UInt64(b) }
-        let h1 = Double(hash % 360)
-        let h2 = (h1 + 40).truncatingRemainder(dividingBy: 360)
-        let album = Album(
-            id: "alb-" + UUID().uuidString,
-            title: title, artist: artist,
-            year: Calendar.current.component(.year, from: .now),
-            artworkData: artworkData,
-            h1: h1, h2: h2
-        )
-        albums.append(album)
-        return album.id
     }
 
     // ── 持久化（design.md D6：JSON 存 Application Support） ──
@@ -669,15 +895,20 @@ final class AppState {
     }
 
     private static var storeURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Crate", isDirectory: true)
+        let dir = storeDirectoryOverride
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Crate", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("library.json")
     }
 
     private func persist() {
-        guard loaded else { return }
+        guard loaded, !persistenceProtectionActive else { return }
         schedulePersistence(currentPersistenceSnapshot)
+    }
+
+    private func allowPersistenceAfterUserChange() {
+        persistenceProtectionActive = false
     }
 
     private func schedulePersistence(_ snapshot: PersistedLibrary) {
@@ -712,7 +943,12 @@ final class AppState {
             generation = persistenceGeneration
             persistenceLock.unlock()
 
-            Self.writePersistenceSnapshot(snapshot)
+            do {
+                try Self.writePersistenceSnapshot(snapshot)
+                markPersistenceWriteSucceeded()
+            } catch {
+                reportPersistenceWriteFailure(error)
+            }
 
             persistenceLock.lock()
             if persistenceGeneration == generation {
@@ -724,10 +960,23 @@ final class AppState {
         }
     }
 
-    private static func writePersistenceSnapshot(_ snapshot: PersistedLibrary) {
-        if let data = try? JSONEncoder().encode(snapshot) {
-            try? data.write(to: Self.storeURL, options: .atomic)
+    private func reportPersistenceWriteFailure(_ error: Error) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.persistenceFailureReported else { return }
+            self.persistenceFailureReported = true
+            self.showToast("曲库保存失败，请检查磁盘权限或空间")
         }
+    }
+
+    private func markPersistenceWriteSucceeded() {
+        DispatchQueue.main.async { [weak self] in
+            self?.persistenceFailureReported = false
+        }
+    }
+
+    private static func writePersistenceSnapshot(_ snapshot: PersistedLibrary) throws {
+        let data = try JSONEncoder().encode(snapshot)
+        try data.write(to: Self.storeURL, options: .atomic)
     }
 }
 

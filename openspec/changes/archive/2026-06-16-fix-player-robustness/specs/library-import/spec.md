@@ -1,8 +1,5 @@
-# library-import Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change local-music-player. Update Purpose after archive.
-## Requirements
 ### Requirement: 文件选择导入
 内容区头部的 + 控件 SHALL 打开二级菜单，菜单 SHALL 至少包含"导入文件"和"导入文件夹"动作。用户选择"导入文件"后，应用 SHALL 打开系统文件选择面板（可多选，限音频类型 MP3/M4A/FLAC/WAV/AAC/AIFF）。确认后 SHALL 将所选文件加入资料库并切换到资料库视图，toast 显示导入数量。
 

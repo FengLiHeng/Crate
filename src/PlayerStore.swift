@@ -38,6 +38,10 @@ final class PlayerStore {
     @ObservationIgnored var onToast: (String) -> Void = { _ in }
     /// 播放撞到文件缺失/无法解码时回调，供 AppState 即时标记失效（design.md D2）
     @ObservationIgnored var onMissing: (String) -> Void = { _ in }
+    @ObservationIgnored var engineFactory: (URL, Double) throws -> PlaybackEngine = { url, volume in
+        try AVAudioPlayerEngine(url: url, volume: volume)
+    }
+    @ObservationIgnored var engineBuildQueue: DispatchQueue = .global(qos: .userInitiated)
 
     @ObservationIgnored private var engine: PlaybackEngine?
     @ObservationIgnored private var progressTimer: Timer?
@@ -93,17 +97,35 @@ final class PlayerStore {
     // MARK: - 下一首 / 上一首（next / prev）
 
     func next() {
+        advanceForward(skippingUnplayable: false)
+    }
+
+    private func advanceForward(skippingUnplayable: Bool) {
         if !manualQueue.isEmpty {
             let head = manualQueue.removeFirst()
             isManual = true
             startPlaying(id: head)
             return
         }
-        guard !ctx.ids.isEmpty else { stopPlayback(); return }
+        guard !ctx.ids.isEmpty else {
+            if skippingUnplayable {
+                stopBecauseNoPlayableTracks()
+            } else {
+                stopPlayback()
+            }
+            return
+        }
+        let returningFromManual = isManual
         var nextPos = ctx.pos + 1
         if nextPos >= ctx.ids.count {
             if repeatMode == .all {
                 nextPos = 0
+            } else if skippingUnplayable {
+                stopBecauseNoPlayableTracks()
+                return
+            } else if returningFromManual {
+                stopPlayback()
+                return
             } else {
                 // 列表末尾自然结束：停在曲目末尾
                 pausePlayback()
@@ -202,7 +224,6 @@ final class PlayerStore {
 
     func resetPlaybackSession() {
         stopPlayback()
-        playToken += 1
         manualQueue = []
         ctx = Context()
         isManual = false
@@ -266,8 +287,9 @@ final class PlayerStore {
             // 构造解码引擎放到后台，避免大文件/网络卷阻塞 UI（design.md D5）
             isPlaying = false
             let vol = volume
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let made = try? AVAudioPlayerEngine(url: url, volume: vol)
+            let factory = engineFactory
+            engineBuildQueue.async { [weak self] in
+                let made = try? factory(url, vol)
                 DispatchQueue.main.async {
                     guard let self, self.playToken == token else { return } // 用户已切歌，作废
                     guard let e = made else {
@@ -299,9 +321,7 @@ final class PlayerStore {
         isPlaying = false
         if skipVisited.contains(song.id) {
             // 候选重复出现，全库不可播
-            skipVisited.removeAll()
-            onToast("没有可播放的曲目")
-            stopPlayback()
+            stopBecauseNoPlayableTracks()
             return
         }
         skipVisited.insert(song.id)
@@ -309,7 +329,7 @@ final class PlayerStore {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             switch direction {
-            case .forward: self.next()
+            case .forward: self.advanceForward(skippingUnplayable: true)
             case .backward: self.stepBackward()
             }
         }
@@ -333,12 +353,20 @@ final class PlayerStore {
     }
 
     func stopPlayback() {
+        playToken += 1
         engine?.stop()
         engine = nil
         currentId = nil
+        isManual = false
         isPlaying = false
         progress = 0
         stopProgressTimer()
+    }
+
+    private func stopBecauseNoPlayableTracks() {
+        skipVisited.removeAll()
+        onToast("没有可播放的曲目")
+        stopPlayback()
     }
 
     private func startProgressTimer() {
