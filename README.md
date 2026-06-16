@@ -4,6 +4,20 @@ Crate 是一个 macOS SwiftUI 本地音乐播放器，专注于导入、整理�
 
 ![Crate 应用图标](src/Assets.xcassets/AppIcon.appiconset/icon_128x128.png)
 
+## 界面预览
+
+### 主页面
+
+![Crate 主页面](docs/截图/主页面.png)
+
+### 待播清单
+
+![Crate 待播清单页面](docs/截图/待播清单页面.png)
+
+### 动态歌词
+
+![Crate 歌词页面](docs/截图/歌词页面.png)
+
 ## 功能概览
 
 - 本地曲库导入：支持导入音频文件或文件夹，过滤可播放格式。
@@ -115,6 +129,9 @@ Scripts/
 
 docs/设计材料/
   原始 Web 原型、样式和设计 token 参考
+
+docs/截图/
+  README 使用的应用界面截图
 ```
 
 ## OpenSpec 工作流
