@@ -63,6 +63,10 @@ final class AppState {
 
     @ObservationIgnored private var toastTask: Task<Void, Never>?
     @ObservationIgnored private var loaded = false
+    @ObservationIgnored private let persistenceLock = NSLock()
+    @ObservationIgnored private var pendingPersistenceSnapshot: PersistedLibrary?
+    @ObservationIgnored private var persistenceGeneration = 0
+    @ObservationIgnored private var persistenceDrainScheduled = false
 
     init() {
         let savedTheme = UserDefaults.standard.string(forKey: "lmp-theme")
@@ -91,6 +95,24 @@ final class AppState {
 
         // 启动后台批量探测失效曲目（design.md D2）
         probeAvailability()
+    }
+
+    func flushPersistence() {
+        guard loaded else { return }
+        let snapshot = currentPersistenceSnapshot
+        persistenceLock.lock()
+        pendingPersistenceSnapshot = snapshot
+        persistenceGeneration &+= 1
+        persistenceLock.unlock()
+
+        Self.persistenceQueue.sync { [weak self] in
+            Self.writePersistenceSnapshot(snapshot)
+            guard let self else { return }
+            self.persistenceLock.lock()
+            self.pendingPersistenceSnapshot = snapshot
+            self.persistenceDrainScheduled = false
+            self.persistenceLock.unlock()
+        }
     }
 
     // ── 失效曲目探测/标记（spec: track-availability，design.md D1/D2） ──
@@ -642,6 +664,10 @@ final class AppState {
         var playlists: [Playlist]
     }
 
+    private var currentPersistenceSnapshot: PersistedLibrary {
+        PersistedLibrary(albums: albums, songs: library, playlists: playlists)
+    }
+
     private static var storeURL: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Crate", isDirectory: true)
@@ -651,11 +677,56 @@ final class AppState {
 
     private func persist() {
         guard loaded else { return }
-        let snapshot = PersistedLibrary(albums: albums, songs: library, playlists: playlists)
+        schedulePersistence(currentPersistenceSnapshot)
+    }
+
+    private func schedulePersistence(_ snapshot: PersistedLibrary) {
+        var shouldScheduleDrain = false
+        persistenceLock.lock()
+        pendingPersistenceSnapshot = snapshot
+        persistenceGeneration &+= 1
+        if !persistenceDrainScheduled {
+            persistenceDrainScheduled = true
+            shouldScheduleDrain = true
+        }
+        persistenceLock.unlock()
+
+        guard shouldScheduleDrain else { return }
         Self.persistenceQueue.async {
-            if let data = try? JSONEncoder().encode(snapshot) {
-                try? data.write(to: Self.storeURL, options: .atomic)
+            self.drainPersistenceQueue()
+        }
+    }
+
+    private func drainPersistenceQueue() {
+        while true {
+            let snapshot: PersistedLibrary
+            let generation: Int
+
+            persistenceLock.lock()
+            guard let pendingPersistenceSnapshot else {
+                persistenceDrainScheduled = false
+                persistenceLock.unlock()
+                return
             }
+            snapshot = pendingPersistenceSnapshot
+            generation = persistenceGeneration
+            persistenceLock.unlock()
+
+            Self.writePersistenceSnapshot(snapshot)
+
+            persistenceLock.lock()
+            if persistenceGeneration == generation {
+                persistenceDrainScheduled = false
+                persistenceLock.unlock()
+                return
+            }
+            persistenceLock.unlock()
+        }
+    }
+
+    private static func writePersistenceSnapshot(_ snapshot: PersistedLibrary) {
+        if let data = try? JSONEncoder().encode(snapshot) {
+            try? data.write(to: Self.storeURL, options: .atomic)
         }
     }
 }

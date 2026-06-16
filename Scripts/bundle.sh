@@ -8,7 +8,11 @@ if [[ -n "${SWIFT_BUILD_FLAGS:-}" ]]; then
     # 允许受限环境传入 --disable-sandbox 等 SwiftPM 构建参数；默认不改变本地打包行为。
     SWIFT_BUILD_FLAGS_ARRAY=(${SWIFT_BUILD_FLAGS})
 fi
-swift build "${SWIFT_BUILD_FLAGS_ARRAY[@]}" -c release --arch arm64
+if [[ ${#SWIFT_BUILD_FLAGS_ARRAY[@]} -gt 0 ]]; then
+    swift build "${SWIFT_BUILD_FLAGS_ARRAY[@]}" -c release --arch arm64
+else
+    swift build -c release --arch arm64
+fi
 
 APP="build/Crate.app"
 BIN=".build/arm64-apple-macosx/release/Crate"

@@ -18,7 +18,7 @@ struct SidebarView: View {
             Spacer().frame(height: 40)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     sectionHeader("资料库")
                     SideItem(
                         icon: "music.note",

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // 六列网格（player.css .thead/.row）：# 44 | 标题 2.1fr | 艺术家 1.1fr | 专辑 1.1fr | 时长 56 | 更多 40
 private struct ColumnWidths {
@@ -29,22 +30,14 @@ struct SongTableView: View {
                         ? emptyText
                         : "没有与「\(app.search)」匹配的结果"
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
-                        Section {
-                            ForEach(Array(songs.enumerated()), id: \.element.id) { i, song in
-                                SongRow(song: song, index: i, cols: cols) {
-                                    let playbackIndex = playbackSongs.firstIndex { $0.id == song.id } ?? 0
-                                    app.player.playFrom(playbackSongs, index: playbackIndex, rotateFromIndex: true)
-                                }
-                            }
-                        } header: {
-                            TableHeader(cols: cols)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                VStack(spacing: 0) {
+                    TableHeader(cols: cols)
+                        .padding(.horizontal, 16)
+                    NativeSongTableView(songs: songs, playbackSongs: playbackSongs, cols: cols)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
                 }
             }
         }
@@ -54,6 +47,197 @@ struct SongTableView: View {
         app.viewPlaylist == nil
             ? "资料库是空的，拖入音频文件或点击 + 导入"
             : "该分组暂无歌曲\n在歌曲上右键选择「添加到分组」"
+    }
+}
+
+private struct NativeSongTableView: NSViewRepresentable {
+    var songs: [Song]
+    var playbackSongs: [Song]
+    var cols: ColumnWidths
+
+    @Environment(AppState.self) private var app
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = SongTableScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.borderType = .noBorder
+
+        let tableView = NSTableView()
+        tableView.headerView = nil
+        tableView.backgroundColor = .clear
+        tableView.selectionHighlightStyle = .none
+        tableView.intercellSpacing = .zero
+        tableView.rowHeight = 52
+        tableView.style = .plain
+        tableView.usesAlternatingRowBackgroundColors = false
+        tableView.allowsEmptySelection = true
+        tableView.allowsMultipleSelection = false
+        tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        tableView.dataSource = context.coordinator
+        tableView.delegate = context.coordinator
+        tableView.target = context.coordinator
+        tableView.doubleAction = #selector(Coordinator.doubleClicked(_:))
+
+        let column = NSTableColumn(identifier: Coordinator.columnIdentifier)
+        column.resizingMask = .autoresizingMask
+        tableView.addTableColumn(column)
+
+        scrollView.documentView = tableView
+        scrollView.tableView = tableView
+        context.coordinator.tableView = tableView
+        context.coordinator.scrollView = scrollView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.update(
+            app: app,
+            songs: songs,
+            playbackSongs: playbackSongs,
+            cols: cols
+        )
+    }
+
+    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+        static let columnIdentifier = NSUserInterfaceItemIdentifier("song-row")
+        private let cellIdentifier = NSUserInterfaceItemIdentifier("song-row-cell")
+
+        weak var tableView: NSTableView?
+        weak var scrollView: NSScrollView?
+
+        private var app: AppState?
+        private var songs: [Song] = []
+        private var playbackSongs: [Song] = []
+        private var cols = ColumnWidths(total: 0)
+        private var songIds: [String] = []
+        private var lastColumnWidth: CGFloat = 0
+
+        func update(app: AppState, songs: [Song], playbackSongs: [Song], cols: ColumnWidths) {
+            self.app = app
+            self.songs = songs
+            self.playbackSongs = playbackSongs
+            self.cols = cols
+
+            let ids = songs.map(\.id)
+            let width = scrollView?.contentSize.width ?? 0
+            if let tableView, let column = tableView.tableColumns.first, abs(column.width - width) > 0.5 {
+                column.width = max(0, width)
+                lastColumnWidth = column.width
+            }
+
+            if ids != songIds {
+                songIds = ids
+                tableView?.reloadData()
+            } else if abs(lastColumnWidth - width) > 0.5 {
+                refreshVisibleRows()
+            } else {
+                refreshVisibleRows()
+            }
+        }
+
+        func numberOfRows(in tableView: NSTableView) -> Int {
+            songs.count
+        }
+
+        func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+            52
+        }
+
+        func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+            guard songs.indices.contains(row), let app else { return nil }
+            let cell = tableView.makeView(withIdentifier: cellIdentifier, owner: self) as? SongHostingCell
+                ?? SongHostingCell(identifier: cellIdentifier)
+            configure(cell, row: row, app: app)
+            return cell
+        }
+
+        func tableViewSelectionDidChange(_ notification: Notification) {
+            guard let tableView, tableView.selectedRow >= 0, songs.indices.contains(tableView.selectedRow) else { return }
+            app?.selectedId = songs[tableView.selectedRow].id
+        }
+
+        @objc func doubleClicked(_ sender: NSTableView) {
+            let row = sender.clickedRow >= 0 ? sender.clickedRow : sender.selectedRow
+            guard songs.indices.contains(row), let app else { return }
+            play(song: songs[row], app: app)
+        }
+
+        private func refreshVisibleRows() {
+            guard let tableView, let app else { return }
+            let visibleRows = tableView.rows(in: tableView.visibleRect)
+            guard visibleRows.location != NSNotFound else { return }
+            let end = min(visibleRows.location + visibleRows.length, songs.count)
+            guard visibleRows.location < end else { return }
+
+            for row in visibleRows.location..<end {
+                if let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? SongHostingCell {
+                    configure(cell, row: row, app: app)
+                }
+            }
+        }
+
+        private func configure(_ cell: SongHostingCell, row: Int, app: AppState) {
+            let song = songs[row]
+            cell.set(
+                AnyView(
+                    SongRow(song: song, index: row, cols: cols) { [weak self, weak app] in
+                        guard let self, let app else { return }
+                        self.play(song: song, app: app)
+                    }
+                    .environment(app)
+                )
+            )
+        }
+
+        private func play(song: Song, app: AppState) {
+            let playbackIndex = playbackSongs.firstIndex { $0.id == song.id } ?? 0
+            app.player.playFrom(playbackSongs, index: playbackIndex, rotateFromIndex: true)
+        }
+    }
+}
+
+private final class SongTableScrollView: NSScrollView {
+    weak var tableView: NSTableView?
+
+    override func layout() {
+        super.layout()
+        guard let column = tableView?.tableColumns.first else { return }
+        column.width = max(0, contentSize.width)
+    }
+}
+
+private final class SongHostingCell: NSTableCellView {
+    private var hostingView: NSHostingView<AnyView>?
+
+    convenience init(identifier: NSUserInterfaceItemIdentifier) {
+        self.init(frame: .zero)
+        self.identifier = identifier
+    }
+
+    func set(_ rootView: AnyView) {
+        if let hostingView {
+            hostingView.rootView = rootView
+        } else {
+            let hostingView = NSHostingView(rootView: rootView)
+            hostingView.translatesAutoresizingMaskIntoConstraints = false
+            hostingView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            hostingView.setContentHuggingPriority(.defaultLow, for: .vertical)
+            addSubview(hostingView)
+            NSLayoutConstraint.activate([
+                hostingView.leadingAnchor.constraint(equalTo: leadingAnchor),
+                hostingView.trailingAnchor.constraint(equalTo: trailingAnchor),
+                hostingView.topAnchor.constraint(equalTo: topAnchor),
+                hostingView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            ])
+            self.hostingView = hostingView
+        }
     }
 }
 
