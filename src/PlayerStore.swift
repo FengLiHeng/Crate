@@ -11,10 +11,20 @@ enum SkipDirection {
 // 播放上下文 ctx + 插播队列 manualQueue，插播结束后回到上下文继续。
 @Observable
 final class PlayerStore {
-    struct Context {
+    struct Context: Codable {
         var ids: [String] = []
         var originalIds: [String] = []
         var pos: Int = -1
+    }
+
+    private struct PlaybackMemory: Codable {
+        var currentId: String
+        var progress: Double
+        var isManual: Bool
+        var manualQueue: [String]
+        var ctx: Context
+        var shuffle: Bool
+        var repeatMode: RepeatMode
     }
 
     var currentId: String?
@@ -45,6 +55,10 @@ final class PlayerStore {
 
     @ObservationIgnored private var engine: PlaybackEngine?
     @ObservationIgnored private var progressTimer: Timer?
+    @ObservationIgnored private var playbackMemoryURL: URL?
+    @ObservationIgnored private let playbackMemoryQueue = DispatchQueue(label: "com.crate.playback-memory", qos: .utility)
+    @ObservationIgnored private var playbackMemorySaveScheduled = false
+    @ObservationIgnored private var lastPlaybackMemorySaveAt = Date.distantPast
     /// 本轮跳过已尝试过的曲目 id；候选再次出现说明绕了一圈，全库不可播（design.md D4）
     @ObservationIgnored private var skipVisited: Set<String> = []
     /// 播放代次：异步构造引擎期间用户若已切歌，旧构造结果按代次作废（design.md D5）
@@ -60,6 +74,156 @@ final class PlayerStore {
     var upcomingIds: [String] {
         guard ctx.pos + 1 < ctx.ids.count else { return [] }
         return Array(ctx.ids[(ctx.pos + 1)...])
+    }
+
+    // MARK: - 播放记忆
+
+    func configurePlaybackMemory(url: URL) {
+        playbackMemoryURL = url
+    }
+
+    func restorePlaybackMemory(availableSongs songsById: [String: Song]) {
+        guard let memory = readPlaybackMemory() else { return }
+        guard let song = songsById[memory.currentId], isRestorable(song) else {
+            clearPlaybackMemory()
+            resetRestoredPlaybackState()
+            return
+        }
+
+        let availableIds = Set(songsById.keys)
+        var restoredContext = Context(
+            ids: memory.ctx.ids.filter { availableIds.contains($0) },
+            originalIds: memory.ctx.originalIds.filter { availableIds.contains($0) },
+            pos: memory.ctx.pos
+        )
+        if restoredContext.originalIds.isEmpty {
+            restoredContext.originalIds = restoredContext.ids
+        }
+
+        if memory.isManual {
+            restoredContext.pos = restoredContext.ids.indices.contains(restoredContext.pos)
+                ? restoredContext.pos
+                : min(restoredContext.ids.count - 1, max(-1, restoredContext.pos))
+        } else if let currentPos = restoredContext.ids.firstIndex(of: memory.currentId) {
+            restoredContext.pos = currentPos
+        } else {
+            restoredContext.ids = [memory.currentId]
+            restoredContext.originalIds = [memory.currentId]
+            restoredContext.pos = 0
+        }
+
+        playToken += 1
+        engine?.stop()
+        engine = nil
+        stopProgressTimer()
+        skipVisited.removeAll()
+
+        currentId = memory.currentId
+        progress = clampedProgress(memory.progress, for: song)
+        isManual = memory.isManual
+        isPlaying = false
+        manualQueue = memory.manualQueue.filter { availableIds.contains($0) && $0 != memory.currentId }
+        ctx = restoredContext
+        shuffle = memory.shuffle
+        repeatMode = memory.repeatMode
+    }
+
+    func flushPlaybackMemory() {
+        playbackMemorySaveScheduled = false
+        lastPlaybackMemorySaveAt = Date()
+        let snapshot = currentPlaybackMemorySnapshot()
+        guard let url = playbackMemoryURL else { return }
+        playbackMemoryQueue.sync {
+            Self.writePlaybackMemory(snapshot, to: url)
+        }
+    }
+
+    private func savePlaybackMemorySoon() {
+        guard playbackMemoryURL != nil else { return }
+        let elapsed = Date().timeIntervalSince(lastPlaybackMemorySaveAt)
+        if elapsed >= 2 {
+            writePlaybackMemoryAsync()
+            return
+        }
+        guard !playbackMemorySaveScheduled else { return }
+        playbackMemorySaveScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + (2 - elapsed)) { [weak self] in
+            guard let self else { return }
+            self.playbackMemorySaveScheduled = false
+            self.writePlaybackMemoryAsync()
+        }
+    }
+
+    private func writePlaybackMemoryAsync() {
+        let snapshot = currentPlaybackMemorySnapshot()
+        guard let url = playbackMemoryURL else { return }
+        lastPlaybackMemorySaveAt = Date()
+        playbackMemoryQueue.async {
+            Self.writePlaybackMemory(snapshot, to: url)
+        }
+    }
+
+    private func currentPlaybackMemorySnapshot() -> PlaybackMemory? {
+        guard let currentId, songProvider(currentId) != nil else { return nil }
+        return PlaybackMemory(
+            currentId: currentId,
+            progress: progress,
+            isManual: isManual,
+            manualQueue: manualQueue,
+            ctx: ctx,
+            shuffle: shuffle,
+            repeatMode: repeatMode
+        )
+    }
+
+    private func readPlaybackMemory() -> PlaybackMemory? {
+        guard let url = playbackMemoryURL,
+              FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(PlaybackMemory.self, from: data)
+    }
+
+    private func clearPlaybackMemory() {
+        guard let url = playbackMemoryURL else { return }
+        playbackMemoryQueue.sync {
+            Self.writePlaybackMemory(nil, to: url)
+        }
+    }
+
+    private static func writePlaybackMemory(_ memory: PlaybackMemory?, to url: URL) {
+        let directory = url.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        guard let memory else {
+            if FileManager.default.fileExists(atPath: url.path) {
+                try? FileManager.default.removeItem(at: url)
+            }
+            return
+        }
+        guard let data = try? JSONEncoder().encode(memory) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
+    private func resetRestoredPlaybackState() {
+        playToken += 1
+        engine?.stop()
+        engine = nil
+        currentId = nil
+        isManual = false
+        isPlaying = false
+        progress = 0
+        manualQueue = []
+        ctx = Context()
+        skipVisited.removeAll()
+        stopProgressTimer()
+    }
+
+    private func isRestorable(_ song: Song) -> Bool {
+        guard let url = song.fileURL else { return true }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    private func clampedProgress(_ time: Double, for song: Song) -> Double {
+        min(max(0, time), song.duration)
     }
 
     // MARK: - 启动播放
@@ -130,6 +294,7 @@ final class PlayerStore {
                 // 列表末尾自然结束：停在曲目末尾
                 pausePlayback()
                 progress = currentSong?.duration ?? 0
+                savePlaybackMemorySoon()
                 return
             }
         }
@@ -166,23 +331,34 @@ final class PlayerStore {
             engine?.pause()
             isPlaying = false
             stopProgressTimer()
+            savePlaybackMemorySoon()
         } else {
-            engine?.play()
-            isPlaying = true
-            startProgressTimer()
+            guard let id = currentId else { return }
+            if let engine {
+                engine.play()
+                isPlaying = true
+                startProgressTimer()
+                savePlaybackMemorySoon()
+            } else {
+                startPlaying(id: id, startAt: progress)
+            }
         }
     }
 
     func seek(to time: Double) {
         progress = min(max(0, time), currentSong?.duration ?? 0)
         engine?.seek(to: progress)
+        savePlaybackMemorySoon()
     }
 
     // MARK: - 随机 / 循环（toggleShuffle / cycleRepeat）
 
     func toggleShuffle() {
         shuffle.toggle()
-        guard !ctx.ids.isEmpty else { return }
+        guard !ctx.ids.isEmpty else {
+            savePlaybackMemorySoon()
+            return
+        }
         if shuffle {
             // 开启：当前曲目保持队首，其余洗牌
             let cur = ctx.ids[max(0, min(ctx.pos, ctx.ids.count - 1))]
@@ -196,21 +372,25 @@ final class PlayerStore {
             ctx.ids = ctx.originalIds
             ctx.pos = p
         }
+        savePlaybackMemorySoon()
     }
 
     func cycleRepeat() {
         repeatMode = repeatMode == .off ? .all : repeatMode == .all ? .one : .off
+        savePlaybackMemorySoon()
     }
 
     // MARK: - 队列操作（playNextSong / addToQueue / clearQueue / playManualAt / playContextAt）
 
     func playNextSong(_ song: Song) {
         manualQueue.insert(song.id, at: 0)
+        savePlaybackMemorySoon()
         onToast("「\(song.title)」将在下一首播放")
     }
 
     func addToQueue(_ song: Song) {
         manualQueue.append(song.id)
+        savePlaybackMemorySoon()
         onToast("已将「\(song.title)」添加到待播清单")
     }
 
@@ -219,6 +399,7 @@ final class PlayerStore {
         let keep = Array(ctx.ids.prefix(ctx.pos + 1))
         ctx.ids = keep
         ctx.originalIds = keep
+        savePlaybackMemorySoon()
         onToast("已清空待播清单")
     }
 
@@ -228,6 +409,7 @@ final class PlayerStore {
         ctx = Context()
         isManual = false
         skipVisited.removeAll()
+        savePlaybackMemorySoon()
     }
 
     func playManualAt(_ index: Int) {
@@ -248,6 +430,7 @@ final class PlayerStore {
     func removeManualAt(_ index: Int) {
         guard manualQueue.indices.contains(index) else { return }
         manualQueue.remove(at: index)
+        savePlaybackMemorySoon()
     }
 
     // MARK: - 删除歌曲时同步队列与上下文（handleMenuAction remove）
@@ -264,19 +447,22 @@ final class PlayerStore {
         }
         if currentId == songId {
             stopPlayback()
+        } else {
+            savePlaybackMemorySoon()
         }
     }
 
     // MARK: - 内部：引擎与进度
 
-    private func startPlaying(id: String, skipOnMissing: SkipDirection = .forward) {
+    private func startPlaying(id: String, startAt: Double = 0, skipOnMissing: SkipDirection = .forward) {
         guard let song = songProvider(id) else { return }
         engine?.stop()
         engine = nil
-        progress = 0
+        progress = clampedProgress(startAt, for: song)
         currentId = id
         playToken += 1
         let token = playToken
+        savePlaybackMemorySoon()
 
         if let url = song.fileURL {
             // 真实文件：文件不存在直接按方向跳过
@@ -310,9 +496,11 @@ final class PlayerStore {
         skipVisited.removeAll()
         engine = e
         e.onFinished = { [weak self] in self?.handleFinished() }
+        e.seek(to: progress)
         e.play()
         isPlaying = true
         startProgressTimer()
+        savePlaybackMemorySoon()
     }
 
     /// 文件缺失或无法解码：标记失效、提示并按方向继续寻找可用曲目；绕回一圈则停止（design.md D3/D4）
@@ -341,6 +529,7 @@ final class PlayerStore {
             engine?.play()
             isPlaying = true
             startProgressTimer()
+            savePlaybackMemorySoon()
         } else {
             next()
         }
@@ -350,6 +539,7 @@ final class PlayerStore {
         engine?.pause()
         isPlaying = false
         stopProgressTimer()
+        savePlaybackMemorySoon()
     }
 
     func stopPlayback() {
@@ -361,6 +551,7 @@ final class PlayerStore {
         isPlaying = false
         progress = 0
         stopProgressTimer()
+        savePlaybackMemorySoon()
     }
 
     private func stopBecauseNoPlayableTracks() {
@@ -374,6 +565,7 @@ final class PlayerStore {
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self, self.isPlaying, let engine = self.engine else { return }
             self.progress = engine.currentTime
+            self.savePlaybackMemorySoon()
         }
         // .common 模式：滚动/拖动（eventTracking）期间进度照常刷新
         RunLoop.main.add(timer, forMode: .common)

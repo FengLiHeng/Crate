@@ -8,7 +8,7 @@ enum LibraryView: Hashable {
     case playlist(String)
 }
 
-enum RepeatMode: String {
+enum RepeatMode: String, Codable {
     case off, all, one
 }
 
@@ -154,13 +154,17 @@ final class AppState {
         player.songProvider = { [weak self] id in self?.songsById[id] }
         player.onToast = { [weak self] msg in self?.showToast(msg) }
         player.onMissing = { [weak self] id in self?.markMissing(id) }
+        player.configurePlaybackMemory(url: Self.playbackMemoryURL)
+        player.restorePlaybackMemory(availableSongs: songsById)
 
         // 启动后台批量探测失效曲目（design.md D2）
         probeAvailability()
     }
 
     func flushPersistence() {
-        guard loaded, !persistenceProtectionActive else { return }
+        guard loaded else { return }
+        player.flushPlaybackMemory()
+        guard !persistenceProtectionActive else { return }
         let snapshot = currentPersistenceSnapshot
         persistenceLock.lock()
         pendingPersistenceSnapshot = snapshot
@@ -954,11 +958,21 @@ final class AppState {
     }
 
     private static var storeURL: URL {
-        let dir = storeDirectoryOverride
-            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("Crate", isDirectory: true)
+        let dir = storeDirectory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("library.json")
+    }
+
+    private static var playbackMemoryURL: URL {
+        let dir = storeDirectory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("playback-memory.json")
+    }
+
+    private static var storeDirectory: URL {
+        storeDirectoryOverride
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Crate", isDirectory: true)
     }
 
     private func persist() {
