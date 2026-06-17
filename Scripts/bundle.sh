@@ -16,11 +16,16 @@ fi
 
 APP="build/Crate.app"
 BIN=".build/arm64-apple-macosx/release/Crate"
+RESOURCE_BUNDLE=".build/arm64-apple-macosx/release/Crate_Crate.bundle"
 ICONSET="/tmp/crate-appicon.iconset"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Crate"
+if [[ -d "$RESOURCE_BUNDLE" ]]; then
+    cp -R "$RESOURCE_BUNDLE" "$APP/Contents/Resources/"
+fi
+cp src/Assets.xcassets/AlbumPlaceholder.imageset/album-placeholder.png "$APP/Contents/Resources/album-placeholder.png"
 
 rm -rf "$ICONSET"
 mkdir -p "$ICONSET"

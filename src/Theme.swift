@@ -98,32 +98,32 @@ struct ThemeTokens {
     )
 
     static let dark = ThemeTokens(
-        winBg: srgb(17, 19, 21),
-        sidebarBg: srgb(26, 29, 32),
-        panelBg: srgb(30, 33, 36),
-        playbarBg: srgb(24, 26, 29),
-        menuBg: srgb(35, 38, 42, 0.95),
-        text: srgb(242, 240, 234),
-        text2: srgb(171, 166, 155),
-        text3: srgb(126, 124, 117),
-        sep: srgb(242, 240, 234, 0.1),
-        hover: srgb(242, 240, 234, 0.065),
-        selected: srgb(196, 122, 58, 0.16),
-        ctrl: srgb(242, 240, 234, 0.085),
-        accent: srgb(196, 122, 58),
-        accentFg: srgb(22, 18, 15),
-        accentSoft: srgb(196, 122, 58, 0.18),
-        thumb: srgb(232, 225, 214),
-        thumbStroke: srgb(255, 255, 255, 0.16),
-        danger: srgb(219, 104, 96),
-        coverPaper: srgb(55, 54, 50),
-        coverPaperShade: srgb(34, 35, 36, 0.8),
-        coverDisc: srgb(15, 16, 18),
-        coverGroove: srgb(242, 240, 234, 0.18),
-        coverLabel: srgb(166, 101, 55),
-        coverCenter: srgb(8, 9, 10),
-        coverStroke: srgb(242, 240, 234, 0.14),
-        coverSheen: .white.opacity(0.11)
+        winBg: srgb(14, 15, 16),
+        sidebarBg: srgb(20, 21, 23),
+        panelBg: srgb(24, 25, 27),
+        playbarBg: srgb(18, 19, 20),
+        menuBg: srgb(30, 31, 34, 0.96),
+        text: srgb(235, 238, 236),
+        text2: srgb(164, 172, 171),
+        text3: srgb(116, 124, 124),
+        sep: srgb(255, 255, 255, 0.09),
+        hover: srgb(255, 255, 255, 0.07),
+        selected: srgb(92, 197, 185, 0.16),
+        ctrl: srgb(255, 255, 255, 0.075),
+        accent: srgb(92, 197, 185),
+        accentFg: srgb(5, 24, 24),
+        accentSoft: srgb(92, 197, 185, 0.16),
+        thumb: srgb(226, 231, 229),
+        thumbStroke: srgb(255, 255, 255, 0.14),
+        danger: srgb(231, 101, 94),
+        coverPaper: srgb(38, 39, 40),
+        coverPaperShade: srgb(24, 25, 26, 0.84),
+        coverDisc: srgb(12, 13, 14),
+        coverGroove: srgb(235, 238, 236, 0.14),
+        coverLabel: srgb(82, 86, 86),
+        coverCenter: srgb(15, 16, 17),
+        coverStroke: srgb(255, 255, 255, 0.12),
+        coverSheen: .white.opacity(0.08)
     )
 
     static func of(_ theme: AppTheme) -> ThemeTokens {
@@ -135,14 +135,14 @@ struct ThemeTokens {
 
 extension Album {
     func coverAccent(theme: AppTheme, alpha: Double = 1) -> Color {
-        oklch(theme == .dark ? 0.62 : 0.52, theme == .dark ? 0.055 : 0.068, h1, alpha)
+        oklch(theme == .dark ? 0.58 : 0.52, theme == .dark ? 0.04 : 0.068, h1, alpha)
     }
 
     func coverAccentSoft(theme: AppTheme, alpha: Double = 1) -> Color {
-        oklch(theme == .dark ? 0.52 : 0.76, theme == .dark ? 0.045 : 0.042, h2, alpha)
+        oklch(theme == .dark ? 0.5 : 0.76, theme == .dark ? 0.03 : 0.042, h2, alpha)
     }
 
     func playbarAmbient(theme: AppTheme, hue: Double, alpha: Double) -> Color {
-        oklch(theme == .dark ? 0.55 : 0.64, theme == .dark ? 0.04 : 0.036, hue, alpha)
+        oklch(theme == .dark ? 0.5 : 0.64, theme == .dark ? 0.03 : 0.036, hue, alpha)
     }
 }

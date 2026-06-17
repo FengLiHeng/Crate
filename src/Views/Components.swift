@@ -22,6 +22,29 @@ private final class ArtworkImageCache {
     }
 }
 
+private enum AlbumPlaceholderImage {
+    static let image: NSImage? = {
+        if let image = NSImage(named: NSImage.Name("AlbumPlaceholder")) {
+            return image
+        }
+
+        let executableDir = Bundle.main.executableURL?.deletingLastPathComponent()
+        let resourceDir = Bundle.main.resourceURL
+        let candidates: [URL?] = [
+            Bundle.main.url(forResource: "album-placeholder", withExtension: "png"),
+            resourceDir?.appendingPathComponent("Assets.xcassets/AlbumPlaceholder.imageset/album-placeholder.png"),
+            resourceDir?.appendingPathComponent("Crate_Crate.bundle/Assets.xcassets/AlbumPlaceholder.imageset/album-placeholder.png"),
+            executableDir?.appendingPathComponent("Crate_Crate.bundle/Assets.xcassets/AlbumPlaceholder.imageset/album-placeholder.png"),
+        ]
+
+        for url in candidates {
+            guard let url, let image = NSImage(contentsOf: url) else { continue }
+            return image
+        }
+        return nil
+    }()
+}
+
 // MARK: - 专辑封面（真实封面 + 统一占位符）
 
 struct CoverView: View {
@@ -51,7 +74,7 @@ struct CoverView: View {
                     .resizable()
                     .scaledToFill()
             } else {
-                CoverPlaceholderView(album: album)
+                CoverPlaceholderView()
             }
             LinearGradient(
                 stops: [
@@ -72,73 +95,39 @@ struct CoverView: View {
 }
 
 private struct CoverPlaceholderView: View {
-    var album: Album?
+    var body: some View {
+        if let image = AlbumPlaceholderImage.image {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+        } else {
+            CoverPlaceholderFallbackView()
+        }
+    }
+}
 
-    @Environment(AppState.self) private var app
-
+private struct CoverPlaceholderFallbackView: View {
     var body: some View {
         GeometryReader { geo in
             let side = min(geo.size.width, geo.size.height)
-            let accent = album?.coverAccent(theme: app.theme) ?? app.tokens.accent
-            let accentSoft = album?.coverAccentSoft(theme: app.theme, alpha: app.theme == .dark ? 0.48 : 0.62)
-                ?? app.tokens.accentSoft
-            let labelFill = album?.coverAccentSoft(theme: app.theme, alpha: app.theme == .dark ? 0.74 : 0.9)
-                ?? app.tokens.coverLabel
-            let labelStroke = album?.coverAccent(theme: app.theme, alpha: 0.48) ?? app.tokens.coverStroke
-
             ZStack {
-                Rectangle().fill(app.tokens.coverPaper)
-
-                Rectangle()
-                    .fill(app.tokens.coverPaperShade)
-                    .frame(width: side * 0.9, height: side * 0.9)
-                    .rotationEffect(.degrees(-8))
-                    .offset(x: side * 0.18, y: side * 0.16)
-
-                HStack(spacing: 0) {
-                    Rectangle()
-                        .fill(accent.opacity(app.theme == .dark ? 0.72 : 0.86))
-                        .frame(width: max(3, side * 0.12))
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                Rectangle()
-                    .fill(accentSoft)
-                    .frame(width: max(10, side * 0.3), height: side * 1.3)
-                    .rotationEffect(.degrees(18))
-                    .offset(x: side * 0.38)
+                LinearGradient(
+                    colors: [srgb(42, 43, 44), srgb(20, 21, 22)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
 
                 Circle()
-                    .fill(app.tokens.coverDisc)
-                    .frame(width: side * 0.68, height: side * 0.68)
-                    .shadow(color: .black.opacity(app.theme == .dark ? 0.28 : 0.16), radius: 1, y: 0.5)
+                    .fill(srgb(22, 23, 24))
+                    .frame(width: side * 0.74, height: side * 0.74)
 
                 Circle()
-                    .stroke(app.tokens.coverGroove, lineWidth: max(0.5, side * 0.016))
-                    .frame(width: side * 0.57, height: side * 0.57)
+                    .stroke(srgb(255, 255, 255, 0.08), lineWidth: max(0.5, side * 0.012))
+                    .frame(width: side * 0.58, height: side * 0.58)
 
                 Circle()
-                    .stroke(app.tokens.coverGroove.opacity(0.72), lineWidth: max(0.5, side * 0.012))
-                    .frame(width: side * 0.43, height: side * 0.43)
-
-                Circle()
-                    .fill(labelFill)
+                    .fill(srgb(50, 51, 52))
                     .frame(width: side * 0.32, height: side * 0.32)
-                    .overlay(
-                        Circle()
-                            .stroke(labelStroke, lineWidth: max(0.5, side * 0.012))
-                    )
-
-                Circle()
-                    .fill(app.tokens.coverCenter)
-                    .frame(width: max(3, side * 0.08), height: max(3, side * 0.08))
-
-                if side >= 46 {
-                    Image(systemName: "music.note")
-                        .font(.system(size: side * 0.16, weight: .semibold))
-                        .foregroundStyle(app.tokens.coverCenter.opacity(0.58))
-                }
             }
         }
     }
@@ -207,7 +196,7 @@ private struct AlbumCoverTile: View {
                     .resizable()
                     .scaledToFill()
             } else {
-                CoverPlaceholderView(album: album)
+                CoverPlaceholderView()
             }
             LinearGradient(
                 stops: [
