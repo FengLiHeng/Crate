@@ -22,7 +22,7 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 - **THEN** 应用显示用于输入分组名称的创建界面
 
 ### Requirement: 主题切换与持久化
-应用 SHALL 提供浅色/深色两套主题，由内容区头部的主题按钮手动切换（非跟随系统外观）。主题选择 SHALL 持久化，重启后 SHALL 恢复上次选择且不出现错误主题闪烁。
+应用 SHALL 提供浅色/深色两套主题，由内容区头部的主题按钮手动切换（非跟随系统外观）。主题选择 SHALL 持久化，重启后 SHALL 恢复上次选择且不出现错误主题闪烁。两套主题 SHALL 使用低饱和中性色承载曲库、侧栏、待播清单与播放条内容，使专辑封面和歌曲信息保持主视觉地位；主题强调色 SHALL 主要用于播放、当前项、选中态、进度、主操作和关键反馈。浅色主题 SHOULD 呈现暖白收藏目录气质，深色主题 SHOULD 呈现石墨器材面板气质。
 
 #### Scenario: 切换深色模式
 - **WHEN** 用户在浅色模式下点击主题按钮（月亮图标）
@@ -31,6 +31,10 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 #### Scenario: 重启恢复主题
 - **WHEN** 用户选择深色主题后退出并重新启动应用
 - **THEN** 应用直接以深色主题显示
+
+#### Scenario: 主题强调状态一致
+- **WHEN** 用户在任一主题下查看当前播放行、播放按钮、进度条、侧栏选中项和主操作按钮
+- **THEN** 这些元素使用统一强调色表达状态，且文本、图标和进度信息保持清晰可读
 
 ### Requirement: Toast 提示
 应用 SHALL 在窗口底部居中显示操作反馈 toast（如导入成功、加入队列等），toast SHALL 在约 2 秒后自动消失；新 toast 出现时 SHALL 替换旧 toast。

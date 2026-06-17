@@ -270,7 +270,7 @@ struct UISlider: View {
                     .fill(app.tokens.thumb)
                     .frame(width: 11, height: 11)
                     .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
-                    .overlay(Circle().strokeBorder(.black.opacity(0.1), lineWidth: 0.5))
+                    .overlay(Circle().strokeBorder(app.tokens.thumbStroke, lineWidth: 0.5))
                     .offset(x: pct * w - 5.5)
                     .scaleEffect(hovering ? 1 : 0.001)
                     .animation(.easeOut(duration: 0.12), value: hovering)

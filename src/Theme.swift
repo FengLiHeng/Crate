@@ -30,7 +30,11 @@ func oklch(_ L: Double, _ C: Double, _ h: Double, _ alpha: Double = 1) -> Color 
     return Color(.sRGB, red: r, green: g, blue: bl, opacity: alpha)
 }
 
-// MARK: - 设计令牌（tokens.css 的 Swift 映射）
+func srgb(_ red: Double, _ green: Double, _ blue: Double, _ alpha: Double = 1) -> Color {
+    Color(.sRGB, red: red / 255, green: green / 255, blue: blue / 255, opacity: alpha)
+}
+
+// MARK: - 设计令牌
 
 enum AppTheme: String {
     case light, dark
@@ -53,6 +57,8 @@ struct ThemeTokens {
     let accentFg: Color
     let accentSoft: Color
     let thumb: Color
+    let thumbStroke: Color
+    let danger: Color
     let coverPaper: Color
     let coverPaperShade: Color
     let coverDisc: Color
@@ -63,57 +69,61 @@ struct ThemeTokens {
     let coverSheen: Color
 
     static let light = ThemeTokens(
-        winBg: oklch(0.988, 0.004, 145),
-        sidebarBg: oklch(0.958, 0.007, 145),
-        panelBg: oklch(0.968, 0.006, 145),
-        playbarBg: oklch(0.972, 0.006, 145),
-        menuBg: oklch(0.972, 0.006, 145, 0.92),
-        text: oklch(0.22, 0.01, 160),
-        text2: oklch(0.46, 0.012, 160),
-        text3: oklch(0.61, 0.012, 160),
-        sep: oklch(0.25, 0.014, 160, 0.1),
-        hover: oklch(0.3, 0.018, 160, 0.055),
-        selected: oklch(0.3, 0.024, 160, 0.095),
-        ctrl: oklch(0.3, 0.018, 160, 0.065),
-        accent: oklch(0.52, 0.095, 178),
+        winBg: srgb(246, 243, 237),
+        sidebarBg: srgb(237, 231, 222),
+        panelBg: srgb(241, 236, 229),
+        playbarBg: srgb(239, 233, 224),
+        menuBg: srgb(249, 246, 241, 0.94),
+        text: srgb(37, 35, 33),
+        text2: srgb(112, 105, 97),
+        text3: srgb(139, 130, 120),
+        sep: srgb(85, 74, 64, 0.16),
+        hover: srgb(85, 74, 64, 0.07),
+        selected: srgb(158, 47, 69, 0.12),
+        ctrl: srgb(85, 74, 64, 0.085),
+        accent: srgb(158, 47, 69),
         accentFg: .white,
-        accentSoft: oklch(0.52, 0.095, 178, 0.13),
+        accentSoft: srgb(158, 47, 69, 0.13),
         thumb: .white,
-        coverPaper: oklch(0.915, 0.012, 135),
-        coverPaperShade: oklch(0.84, 0.018, 150, 0.72),
-        coverDisc: oklch(0.29, 0.012, 210),
-        coverGroove: oklch(0.92, 0.004, 120, 0.2),
-        coverLabel: oklch(0.72, 0.04, 62),
-        coverCenter: oklch(0.2, 0.01, 210),
-        coverStroke: oklch(0.22, 0.018, 160, 0.16),
-        coverSheen: .white.opacity(0.2)
+        thumbStroke: srgb(37, 35, 33, 0.16),
+        danger: srgb(173, 54, 54),
+        coverPaper: srgb(226, 218, 204),
+        coverPaperShade: srgb(200, 190, 174, 0.74),
+        coverDisc: srgb(45, 45, 48),
+        coverGroove: srgb(246, 243, 237, 0.22),
+        coverLabel: srgb(190, 129, 78),
+        coverCenter: srgb(29, 29, 31),
+        coverStroke: srgb(37, 35, 33, 0.18),
+        coverSheen: .white.opacity(0.22)
     )
 
     static let dark = ThemeTokens(
-        winBg: oklch(0.215, 0.008, 205),
-        sidebarBg: oklch(0.25, 0.009, 205),
-        panelBg: oklch(0.238, 0.009, 205),
-        playbarBg: oklch(0.232, 0.009, 205),
-        menuBg: oklch(0.29, 0.01, 205, 0.94),
-        text: oklch(0.94, 0.004, 145),
-        text2: oklch(0.72, 0.006, 145),
-        text3: oklch(0.56, 0.006, 145),
-        sep: oklch(0.95, 0.01, 145, 0.09),
-        hover: oklch(0.9, 0.012, 145, 0.06),
-        selected: oklch(0.9, 0.014, 145, 0.1),
-        ctrl: oklch(0.9, 0.012, 145, 0.08),
-        accent: oklch(0.71, 0.095, 178),
-        accentFg: .white,
-        accentSoft: oklch(0.71, 0.095, 178, 0.17),
-        thumb: oklch(0.92, 0.004, 145),
-        coverPaper: oklch(0.31, 0.012, 195),
-        coverPaperShade: oklch(0.24, 0.014, 205, 0.78),
-        coverDisc: oklch(0.16, 0.01, 220),
-        coverGroove: oklch(0.9, 0.004, 145, 0.18),
-        coverLabel: oklch(0.56, 0.04, 62),
-        coverCenter: oklch(0.11, 0.008, 220),
-        coverStroke: oklch(0.95, 0.006, 145, 0.13),
-        coverSheen: .white.opacity(0.1)
+        winBg: srgb(17, 19, 21),
+        sidebarBg: srgb(26, 29, 32),
+        panelBg: srgb(30, 33, 36),
+        playbarBg: srgb(24, 26, 29),
+        menuBg: srgb(35, 38, 42, 0.95),
+        text: srgb(242, 240, 234),
+        text2: srgb(171, 166, 155),
+        text3: srgb(126, 124, 117),
+        sep: srgb(242, 240, 234, 0.1),
+        hover: srgb(242, 240, 234, 0.065),
+        selected: srgb(196, 122, 58, 0.16),
+        ctrl: srgb(242, 240, 234, 0.085),
+        accent: srgb(196, 122, 58),
+        accentFg: srgb(22, 18, 15),
+        accentSoft: srgb(196, 122, 58, 0.18),
+        thumb: srgb(232, 225, 214),
+        thumbStroke: srgb(255, 255, 255, 0.16),
+        danger: srgb(219, 104, 96),
+        coverPaper: srgb(55, 54, 50),
+        coverPaperShade: srgb(34, 35, 36, 0.8),
+        coverDisc: srgb(15, 16, 18),
+        coverGroove: srgb(242, 240, 234, 0.18),
+        coverLabel: srgb(166, 101, 55),
+        coverCenter: srgb(8, 9, 10),
+        coverStroke: srgb(242, 240, 234, 0.14),
+        coverSheen: .white.opacity(0.11)
     )
 
     static func of(_ theme: AppTheme) -> ThemeTokens {
@@ -125,14 +135,14 @@ struct ThemeTokens {
 
 extension Album {
     func coverAccent(theme: AppTheme, alpha: Double = 1) -> Color {
-        oklch(theme == .dark ? 0.66 : 0.55, theme == .dark ? 0.065 : 0.08, h1, alpha)
+        oklch(theme == .dark ? 0.62 : 0.52, theme == .dark ? 0.055 : 0.068, h1, alpha)
     }
 
     func coverAccentSoft(theme: AppTheme, alpha: Double = 1) -> Color {
-        oklch(theme == .dark ? 0.56 : 0.78, theme == .dark ? 0.055 : 0.05, h2, alpha)
+        oklch(theme == .dark ? 0.52 : 0.76, theme == .dark ? 0.045 : 0.042, h2, alpha)
     }
 
     func playbarAmbient(theme: AppTheme, hue: Double, alpha: Double) -> Color {
-        oklch(theme == .dark ? 0.58 : 0.68, theme == .dark ? 0.05 : 0.045, hue, alpha)
+        oklch(theme == .dark ? 0.55 : 0.64, theme == .dark ? 0.04 : 0.036, hue, alpha)
     }
 }

@@ -202,7 +202,7 @@ private struct GroupNameSheet: View {
                 }
             Text(error ?? "1-\(GroupNameValidation.maxLength) 个字符，可用中英文、数字、空格和 - _ · & + # ()")
                 .font(.system(size: 11.5))
-                .foregroundStyle(error == nil ? app.tokens.text3 : .red)
+                .foregroundStyle(error == nil ? app.tokens.text3 : app.tokens.danger)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Spacer()
