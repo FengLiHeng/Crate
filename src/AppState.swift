@@ -286,7 +286,7 @@ final class AppState {
             lyricsPage = nil
             return
         }
-        guard let page = loadLyricsPage(for: song, reportFailure: true) else {
+        guard let page = loadLyricsPage(for: song, reportFailure: false) else {
             lyricsPage = nil
             return
         }

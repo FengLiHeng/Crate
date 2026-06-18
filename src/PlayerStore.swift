@@ -126,6 +126,7 @@ final class PlayerStore {
         ctx = restoredContext
         shuffle = memory.shuffle
         repeatMode = memory.repeatMode
+        normalizePlaybackMode()
     }
 
     func flushPlaybackMemory() {
@@ -236,7 +237,10 @@ final class PlayerStore {
         skipVisited.removeAll()
         manualQueue = []
         let useShuffle = forceShuffle || shuffle
-        if forceShuffle && !shuffle { shuffle = true }
+        if forceShuffle {
+            shuffle = true
+            repeatMode = .off
+        }
         var ordered = ids
         var pos = selectedId.flatMap { ids.firstIndex(of: $0) } ?? max(0, min(index, ids.count - 1))
         if useShuffle {
@@ -352,15 +356,48 @@ final class PlayerStore {
         savePlaybackMemorySoon()
     }
 
-    // MARK: - 随机 / 循环（toggleShuffle / cycleRepeat）
+    // MARK: - 播放模式（顺序 / 随机 / 列表循环 / 单曲循环）
 
     func toggleShuffle() {
-        shuffle.toggle()
-        guard !ctx.ids.isEmpty else {
-            savePlaybackMemorySoon()
-            return
-        }
+        setShuffleEnabled(!shuffle)
+        if shuffle { repeatMode = .off }
+        savePlaybackMemorySoon()
+    }
+
+    func cycleRepeat() {
+        setShuffleEnabled(false)
+        repeatMode = repeatMode == .off ? .all : repeatMode == .all ? .one : .off
+        savePlaybackMemorySoon()
+    }
+
+    func cyclePlaybackMode() {
         if shuffle {
+            setShuffleEnabled(false)
+            repeatMode = .all
+        } else {
+            switch repeatMode {
+            case .off:
+                setShuffleEnabled(true)
+            case .all:
+                repeatMode = .one
+            case .one:
+                repeatMode = .off
+            }
+        }
+        savePlaybackMemorySoon()
+    }
+
+    private func normalizePlaybackMode() {
+        if shuffle, repeatMode != .off {
+            repeatMode = .off
+        }
+    }
+
+    private func setShuffleEnabled(_ enabled: Bool) {
+        guard shuffle != enabled else { return }
+        shuffle = enabled
+        guard !ctx.ids.isEmpty else { return }
+        if enabled {
             // 开启：当前曲目保持队首，其余洗牌
             let cur = ctx.ids[max(0, min(ctx.pos, ctx.ids.count - 1))]
             let after = ctx.ids.enumerated().filter { $0.offset != ctx.pos }.map(\.element).shuffled()
@@ -373,12 +410,6 @@ final class PlayerStore {
             ctx.ids = ctx.originalIds
             ctx.pos = p
         }
-        savePlaybackMemorySoon()
-    }
-
-    func cycleRepeat() {
-        repeatMode = repeatMode == .off ? .all : repeatMode == .all ? .one : .off
-        savePlaybackMemorySoon()
     }
 
     // MARK: - 队列操作（playNextSong / addToQueue / clearQueue / playManualAt / playContextAt）

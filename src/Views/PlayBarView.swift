@@ -72,9 +72,9 @@ struct PlayBarView: View {
         return VStack(spacing: 4) {
             HStack(spacing: 14) {
                 IconButton(
-                    systemName: "shuffle", size: 14, side: 30,
-                    active: player.shuffle, help: "随机播放"
-                ) { player.toggleShuffle() }
+                    systemName: playbackModeIcon(player), size: 14, side: 30,
+                    active: playbackModeActive(player), help: playbackModeHelp(player)
+                ) { player.cyclePlaybackMode() }
 
                 IconButton(
                     systemName: "backward.fill", size: 17, side: 34,
@@ -87,13 +87,6 @@ struct PlayBarView: View {
                     systemName: "forward.fill", size: 17, side: 34,
                     disabled: song == nil, help: "下一首"
                 ) { player.next() }
-
-                IconButton(
-                    systemName: player.repeatMode == .one ? "repeat.1" : "repeat",
-                    size: 14, side: 30,
-                    active: player.repeatMode != .off,
-                    help: player.repeatMode == .off ? "循环播放：关" : player.repeatMode == .all ? "列表循环" : "单曲循环"
-                ) { player.cycleRepeat() }
 
                 FavoriteButton(song: song)
             }
@@ -110,6 +103,25 @@ struct PlayBarView: View {
             .font(.system(size: 11))
             .monospacedDigit()
             .foregroundStyle(app.tokens.text3)
+        }
+    }
+
+    private func playbackModeIcon(_ player: PlayerStore) -> String {
+        if player.shuffle { return "shuffle" }
+        if player.repeatMode == .one { return "repeat.1" }
+        return "repeat"
+    }
+
+    private func playbackModeActive(_ player: PlayerStore) -> Bool {
+        player.shuffle || player.repeatMode != .off
+    }
+
+    private func playbackModeHelp(_ player: PlayerStore) -> String {
+        if player.shuffle { return "播放模式：随机播放" }
+        switch player.repeatMode {
+        case .off: return "播放模式：顺序播放"
+        case .all: return "播放模式：列表循环"
+        case .one: return "播放模式：单曲循环"
         }
     }
 

@@ -184,38 +184,111 @@ private struct GroupNameSheet: View {
 
     @Environment(AppState.self) private var app
     @FocusState private var focused: Bool
+    @State private var hasEdited = false
 
     private var canCreate: Bool {
         error == nil
     }
 
+    private var visibleError: String? {
+        hasEdited ? error : nil
+    }
+
+    private var nameCount: Int {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).count
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(app.tokens.text)
-            TextField("分组名称", text: $name)
-                .textFieldStyle(.roundedBorder)
-                .focused($focused)
-                .onSubmit {
-                    if canCreate { onCommit() }
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) {
+                    Image(systemName: titleIcon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(app.tokens.accent)
+                        .frame(width: 34, height: 34)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(app.tokens.accentSoft)
+                        )
+
+                    Text(title)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(app.tokens.text)
                 }
-            Text(error ?? "1-\(GroupNameValidation.maxLength) 个字符，可用中英文、数字、空格和 - _ · & + # ()")
-                .font(.system(size: 11.5))
-                .foregroundStyle(error == nil ? app.tokens.text3 : app.tokens.danger)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
+
+                VStack(alignment: .leading, spacing: 7) {
+                    TextField("输入分组名称", text: $name)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14))
+                        .foregroundStyle(app.tokens.text)
+                        .padding(.horizontal, 12)
+                        .frame(height: 40)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(app.tokens.ctrl)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(inputBorderColor, lineWidth: focused ? 1.2 : 0.8)
+                        )
+                        .focused($focused)
+                        .onChange(of: name) { _, _ in hasEdited = true }
+                        .onSubmit {
+                            hasEdited = true
+                            if canCreate { onCommit() }
+                        }
+
+                    HStack(spacing: 8) {
+                        if let visibleError {
+                            Label(visibleError, systemImage: "exclamationmark.circle.fill")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(app.tokens.danger)
+                                .lineLimit(1)
+                                .labelStyle(.titleAndIcon)
+                        }
+                        Spacer(minLength: 0)
+                        Text("\(nameCount)/\(GroupNameValidation.maxLength)")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .monospacedDigit()
+                            .foregroundStyle(nameCount > GroupNameValidation.maxLength ? app.tokens.danger : app.tokens.text3)
+                    }
+                    .frame(minHeight: 18)
+                }
+            }
+            .padding(.init(top: 22, leading: 22, bottom: 18, trailing: 22))
+
+            HStack(spacing: 10) {
                 Spacer()
                 Button("取消", action: onCancel)
-                Button(confirmTitle, action: onCommit)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canCreate)
+                Button(action: {
+                    hasEdited = true
+                    onCommit()
+                }) {
+                    Text(confirmTitle)
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(!canCreate)
+            }
+            .padding(.init(top: 14, leading: 22, bottom: 18, trailing: 22))
+            .background(app.tokens.panelBg)
+            .overlay(alignment: .top) {
+                Rectangle().fill(app.tokens.sep).frame(height: 1)
             }
         }
-        .padding(20)
-        .frame(width: 320)
+        .frame(width: 360)
         .background(app.tokens.winBg)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onAppear { focused = true }
+    }
+
+    private var titleIcon: String {
+        confirmTitle == "创建" ? "folder.badge.plus" : "pencil"
+    }
+
+    private var inputBorderColor: Color {
+        if visibleError != nil { return app.tokens.danger }
+        return focused ? app.tokens.accent : app.tokens.sep
     }
 }
 
