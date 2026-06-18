@@ -45,6 +45,55 @@ final class PlayerStoreTests: XCTestCase {
         XCTAssertTrue(store.isPlaying)
     }
 
+    func testPlayFromDeduplicatesContextAndKeepsSelectedSong() {
+        let first = Song(id: "first", title: "First", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let second = Song(id: "second", title: "Second", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let third = Song(id: "third", title: "Third", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let songs = Dictionary(uniqueKeysWithValues: [first, second, third].map { ($0.id, $0) })
+        let store = PlayerStore()
+        store.songProvider = { songs[$0] }
+
+        store.playFrom([first, second, first, third], index: 3)
+
+        XCTAssertEqual(store.currentId, third.id)
+        XCTAssertEqual(store.ctx.ids, [first.id, second.id, third.id])
+        XCTAssertEqual(store.ctx.originalIds, [first.id, second.id, third.id])
+        XCTAssertEqual(store.ctx.pos, 2)
+        XCTAssertTrue(store.manualQueue.isEmpty)
+    }
+
+    func testPlayNextSongMovesUpcomingTrackToManualQueueWithoutDuplicate() {
+        let first = Song(id: "first", title: "First", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let second = Song(id: "second", title: "Second", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let third = Song(id: "third", title: "Third", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let songs = Dictionary(uniqueKeysWithValues: [first, second, third].map { ($0.id, $0) })
+        let store = PlayerStore()
+        store.songProvider = { songs[$0] }
+
+        store.playFrom([first, second, third], index: 0)
+        store.playNextSong(third)
+
+        XCTAssertEqual(store.manualQueue, [third.id])
+        XCTAssertEqual(store.upcomingIds, [second.id])
+        XCTAssertEqual(store.ctx.originalIds, [first.id, second.id])
+    }
+
+    func testAddToQueueRepositionsExistingManualTrackWithoutDuplicate() {
+        let first = Song(id: "first", title: "First", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let second = Song(id: "second", title: "Second", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let third = Song(id: "third", title: "Third", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let songs = Dictionary(uniqueKeysWithValues: [first, second, third].map { ($0.id, $0) })
+        let store = PlayerStore()
+        store.songProvider = { songs[$0] }
+
+        store.playFrom([first, second, third], index: 0)
+        store.playNextSong(second)
+        store.addToQueue(second)
+
+        XCTAssertEqual(store.manualQueue, [second.id])
+        XCTAssertEqual(store.upcomingIds, [third.id])
+    }
+
     func testPendingEngineDoesNotAttachAfterStop() throws {
         let tempDir = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: tempDir) }

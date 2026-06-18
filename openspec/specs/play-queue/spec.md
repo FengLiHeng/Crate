@@ -4,7 +4,7 @@
 TBD - created by archiving change local-music-player. Update Purpose after archive.
 ## Requirements
 ### Requirement: 插播队列
-应用 SHALL 维护独立于播放上下文的插播队列："添加到下一首播放" SHALL 将歌曲插到队列头部，"添加到待播清单" SHALL 追加到队列尾部，均 toast 确认。插播曲目播放完毕后 SHALL 回到原播放上下文继续，不改变上下文位置与顺序。从【歌曲】视图或具体分组视图发起播放时，应用 SHALL 先清空插播队列，再用当前视图完整歌曲集合重建播放上下文；当前搜索词 MUST NOT 缩小该上下文。
+应用 SHALL 维护独立于播放上下文的插播队列："添加到下一首播放" SHALL 将歌曲插到队列头部，"添加到待播清单" SHALL 追加到队列尾部，均 toast 确认。插播队列与播放上下文中的后续曲目 SHALL 按歌曲 id 去重，同一首歌 MUST NOT 同时出现在插播队列与“接下来”上下文中。插播曲目播放完毕后 SHALL 回到原播放上下文继续，不改变上下文位置与顺序。从【歌曲】视图或具体分组视图发起播放时，应用 SHALL 先清空插播队列，再用当前视图完整歌曲集合重建播放上下文；当前搜索词 MUST NOT 缩小该上下文。
 
 #### Scenario: 添加到下一首播放
 - **WHEN** 播放中用户对某歌曲选择"添加到下一首播放"
@@ -21,6 +21,14 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 #### Scenario: 其他分组歌曲插入当前待播
 - **WHEN** 用户通过右键菜单对其他分组中的歌曲选择"添加到下一首播放"
 - **THEN** 该歌曲插入当前待播清单最前面，当前视图生成的后续待播歌曲保留
+
+#### Scenario: 下一首播放移动已有后续歌曲
+- **WHEN** 当前待播清单的“接下来”分区已包含某歌曲，用户对该歌曲选择"添加到下一首播放"
+- **THEN** 该歌曲只出现在插播队列头部，并从“接下来”分区移除
+
+#### Scenario: 添加到待播清单去重
+- **WHEN** 插播队列或“接下来”分区已包含某歌曲，用户对该歌曲选择"添加到待播清单"
+- **THEN** 待播清单中该歌曲只保留一个条目
 
 ### Requirement: 待播清单面板
 播放条的队列按钮 SHALL 切换右侧待播清单面板的展开/收起。面板 SHALL 分区展示：正在播放（含均衡器动画）、插播 · 下一首播放（插播队列）、接下来（上下文中当前位置之后的曲目）。无后续曲目时 SHALL 显示空状态引导文案。面板 SHALL 对插播与接下来列表使用懒加载渲染，MUST NOT 在打开面板时一次性创建全部队列行视图。
@@ -69,3 +77,4 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 #### Scenario: 清空歌曲列表同步清空待播清单
 - **WHEN** 用户确认清空歌曲列表
 - **THEN** 当前播放停止，插播队列为空，播放上下文为空，待播清单不再显示任何旧歌曲
+

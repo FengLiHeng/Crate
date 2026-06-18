@@ -92,8 +92,8 @@ final class PlayerStore {
 
         let availableIds = Set(songsById.keys)
         var restoredContext = Context(
-            ids: memory.ctx.ids.filter { availableIds.contains($0) },
-            originalIds: memory.ctx.originalIds.filter { availableIds.contains($0) },
+            ids: Self.uniqueIds(memory.ctx.ids.filter { availableIds.contains($0) }),
+            originalIds: Self.uniqueIds(memory.ctx.originalIds.filter { availableIds.contains($0) }),
             pos: memory.ctx.pos
         )
         if restoredContext.originalIds.isEmpty {
@@ -122,7 +122,7 @@ final class PlayerStore {
         progress = clampedProgress(memory.progress, for: song)
         isManual = memory.isManual
         isPlaying = false
-        manualQueue = memory.manualQueue.filter { availableIds.contains($0) && $0 != memory.currentId }
+        manualQueue = Self.uniqueIds(memory.manualQueue.filter { availableIds.contains($0) && $0 != memory.currentId })
         ctx = restoredContext
         shuffle = memory.shuffle
         repeatMode = memory.repeatMode
@@ -230,16 +230,17 @@ final class PlayerStore {
 
     /// 从列表开始播放（playFrom）
     func playFrom(_ list: [Song], index: Int, forceShuffle: Bool = false, rotateFromIndex: Bool = false) {
-        let ids = list.map(\.id)
+        let selectedId = list.indices.contains(index) ? list[index].id : nil
+        let ids = Self.uniqueIds(list.map(\.id))
         guard !ids.isEmpty else { return }
         skipVisited.removeAll()
         manualQueue = []
         let useShuffle = forceShuffle || shuffle
         if forceShuffle && !shuffle { shuffle = true }
         var ordered = ids
-        var pos = max(0, min(index, ids.count - 1))
+        var pos = selectedId.flatMap { ids.firstIndex(of: $0) } ?? max(0, min(index, ids.count - 1))
         if useShuffle {
-            let startId = index >= 0 ? ids[index] : ids.randomElement()!
+            let startId = selectedId ?? ids.randomElement()!
             ordered = [startId] + ids.filter { $0 != startId }.shuffled()
             pos = 0
         } else if rotateFromIndex, pos > 0 {
@@ -383,12 +384,14 @@ final class PlayerStore {
     // MARK: - 队列操作（playNextSong / addToQueue / clearQueue / playManualAt / playContextAt）
 
     func playNextSong(_ song: Song) {
+        guard prepareManualInsertion(of: song) else { return }
         manualQueue.insert(song.id, at: 0)
         savePlaybackMemorySoon()
         onToast("「\(song.title)」将在下一首播放")
     }
 
     func addToQueue(_ song: Song) {
+        guard prepareManualInsertion(of: song) else { return }
         manualQueue.append(song.id)
         savePlaybackMemorySoon()
         onToast("已将「\(song.title)」添加到待播清单")
@@ -450,6 +453,30 @@ final class PlayerStore {
         } else {
             savePlaybackMemorySoon()
         }
+    }
+
+    private static func uniqueIds(_ ids: [String]) -> [String] {
+        var seen = Set<String>()
+        return ids.filter { seen.insert($0).inserted }
+    }
+
+    private func prepareManualInsertion(of song: Song) -> Bool {
+        guard song.id != currentId else {
+            onToast("「\(song.title)」已在待播清单中")
+            return false
+        }
+
+        manualQueue.removeAll { $0 == song.id }
+        removeFromUpcomingContext(song.id)
+        return true
+    }
+
+    private func removeFromUpcomingContext(_ songId: String) {
+        let keepCount = max(0, min(ctx.pos + 1, ctx.ids.count))
+        let kept = ctx.ids.prefix(keepCount)
+        let upcoming = ctx.ids.dropFirst(keepCount).filter { $0 != songId }
+        ctx.ids = Array(kept) + upcoming
+        ctx.originalIds.removeAll { $0 == songId }
     }
 
     // MARK: - 内部：引擎与进度
