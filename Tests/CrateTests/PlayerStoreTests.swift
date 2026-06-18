@@ -129,9 +129,11 @@ final class AppStatePersistenceTests: XCTestCase {
     func testDecodeFailureDoesNotOverwriteExistingLibraryOnInitOrFlush() throws {
         let tempDir = try makeTemporaryDirectory()
         defer {
+            AppState.stripsBundledSampleDataOverride = nil
             AppState.storeDirectoryOverride = nil
             try? FileManager.default.removeItem(at: tempDir)
         }
+        AppState.stripsBundledSampleDataOverride = nil
         AppState.storeDirectoryOverride = tempDir
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         let storeURL = tempDir.appendingPathComponent("library.json")
@@ -150,6 +152,7 @@ final class AppStatePersistenceTests: XCTestCase {
     func testPersistenceWriteFailureShowsToast() throws {
         let tempDir = try makeTemporaryDirectory()
         defer {
+            AppState.stripsBundledSampleDataOverride = nil
             AppState.storeDirectoryOverride = nil
             try? FileManager.default.removeItem(at: tempDir)
         }
@@ -160,6 +163,113 @@ final class AppStatePersistenceTests: XCTestCase {
         let app = AppState()
 
         XCTAssertTrue(waitForCondition { app.toast == "曲库保存失败，请检查磁盘权限或空间" })
+    }
+
+    func testReleaseLoadStripsPersistedBundledSampleData() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer {
+            AppState.stripsBundledSampleDataOverride = nil
+            AppState.storeDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+        AppState.stripsBundledSampleDataOverride = true
+        AppState.storeDirectoryOverride = tempDir
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+        let storeURL = tempDir.appendingPathComponent("library.json")
+        try writeLibrary(
+            albums: SampleData.albums,
+            songs: SampleData.songs,
+            playlists: SampleData.playlists,
+            to: storeURL
+        )
+
+        let app = AppState()
+        app.flushPersistence()
+
+        XCTAssertEqual(app.albums.count, 0)
+        XCTAssertEqual(app.library.count, 0)
+        XCTAssertEqual(app.playlists.filter { $0.id != AppState.favoritesGroupId }.count, 0)
+        XCTAssertTrue(waitForCondition {
+            (try? Data(contentsOf: storeURL)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                .flatMap { $0["songs"] as? [Any] }?.isEmpty == true
+        })
+    }
+
+    func testReleaseLoadStripsArbitraryVirtualSongs() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer {
+            AppState.stripsBundledSampleDataOverride = nil
+            AppState.storeDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+        AppState.stripsBundledSampleDataOverride = true
+        AppState.storeDirectoryOverride = tempDir
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+        let songs = [
+            Song(id: "first", title: "First", artist: nil, albumId: nil, duration: 20, fileURL: nil),
+            Song(id: "second", title: "Second", artist: nil, albumId: nil, duration: 20, fileURL: nil),
+            Song(id: "manual", title: "Manual", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        ]
+        let storeURL = tempDir.appendingPathComponent("library.json")
+        try writeLibrary(albums: [], songs: songs, playlists: [], to: storeURL)
+
+        let app = AppState()
+        app.flushPersistence()
+
+        XCTAssertEqual(app.library.count, 0)
+        XCTAssertTrue(waitForCondition {
+            (try? Data(contentsOf: storeURL)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                .flatMap { $0["songs"] as? [Any] }?.isEmpty == true
+        })
+    }
+
+    func testReleaseLoadKeepsUserImportedSongs() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer {
+            AppState.stripsBundledSampleDataOverride = nil
+            AppState.storeDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+        AppState.stripsBundledSampleDataOverride = true
+        AppState.storeDirectoryOverride = tempDir
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+        let audioURL = tempDir.appendingPathComponent("song.mp3")
+        try Data().write(to: audioURL)
+        let userSong = Song(id: "user-song", title: "User Song", artist: nil, albumId: nil, duration: 12, fileURL: audioURL)
+        try writeLibrary(albums: [], songs: [userSong], playlists: [], to: tempDir.appendingPathComponent("library.json"))
+
+        let app = AppState()
+
+        XCTAssertEqual(app.library, [userSong])
+    }
+
+    func testAsyncPersistenceUsesStoreDirectoryCapturedAtInitialization() throws {
+        let firstDir = try makeTemporaryDirectory()
+        let secondDir = try makeTemporaryDirectory()
+        defer {
+            AppState.stripsBundledSampleDataOverride = nil
+            AppState.storeDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: firstDir)
+            try? FileManager.default.removeItem(at: secondDir)
+        }
+        AppState.stripsBundledSampleDataOverride = false
+        AppState.storeDirectoryOverride = firstDir
+        let app = AppState()
+        let song = Song(id: "first", title: "First", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+
+        app.library = [song]
+        AppState.storeDirectoryOverride = secondDir
+
+        let firstStoreURL = firstDir.appendingPathComponent("library.json")
+        let secondStoreURL = secondDir.appendingPathComponent("library.json")
+        XCTAssertTrue(waitForCondition {
+            (try? Data(contentsOf: firstStoreURL)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                .flatMap { $0["songs"] as? [[String: Any]] }?.first?["id"] as? String == song.id
+        })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: secondStoreURL.path))
     }
 }
 
@@ -195,4 +305,38 @@ private func makeTemporaryDirectory() throws -> URL {
         .appendingPathComponent("crate-tests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
+}
+
+private func writeLibrary(albums: [Album], songs: [Song], playlists: [Playlist], to url: URL) throws {
+    let payload: [String: Any] = [
+        "albums": albums.map { album in
+            [
+                "id": album.id,
+                "title": album.title,
+                "artist": album.artist,
+                "year": album.year,
+                "h1": album.h1,
+                "h2": album.h2
+            ]
+        },
+        "songs": songs.map { song in
+            [
+                "id": song.id,
+                "title": song.title,
+                "artist": song.artist as Any,
+                "albumId": song.albumId as Any,
+                "duration": song.duration,
+                "fileURL": song.fileURL?.absoluteString as Any
+            ]
+        },
+        "playlists": playlists.map { playlist in
+            [
+                "id": playlist.id,
+                "name": playlist.name,
+                "songIds": playlist.songIds
+            ]
+        }
+    ]
+    let data = try JSONSerialization.data(withJSONObject: payload)
+    try data.write(to: url)
 }

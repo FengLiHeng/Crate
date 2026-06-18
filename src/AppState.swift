@@ -27,6 +27,7 @@ final class AppState {
     static let favoritesGroupId = "system-favorites"
     static let favoritesGroupName = "我的收藏"
     static var storeDirectoryOverride: URL?
+    static var stripsBundledSampleDataOverride: Bool?
 
     private static let persistenceQueue = DispatchQueue(label: "com.crate.library-persistence", qos: .utility)
     private static let maxArtworkDataSize = 512 * 1024
@@ -113,21 +114,24 @@ final class AppState {
     @ObservationIgnored private var persistenceDrainScheduled = false
     @ObservationIgnored private var persistenceFailureReported = false
     @ObservationIgnored private var persistenceProtectionActive = false
+    @ObservationIgnored private let persistenceStoreURL: URL
 
     init() {
         let savedTheme = UserDefaults.standard.string(forKey: "lmp-theme")
         theme = AppTheme(rawValue: savedTheme ?? "") ?? .light
 
         let storeURL = Self.storeURL
+        persistenceStoreURL = storeURL
         let hasPersistedLibrary = FileManager.default.fileExists(atPath: storeURL.path)
         var loadFailed = false
         if hasPersistedLibrary {
             do {
                 let data = try Data(contentsOf: storeURL)
                 let persisted = try JSONDecoder().decode(PersistedLibrary.self, from: data)
-                albums = persisted.albums
-                library = persisted.songs
-                playlists = Self.normalizedSystemGroups(persisted.playlists)
+                let sanitized = Self.sanitizedPersistedLibrary(persisted)
+                albums = sanitized.albums
+                library = sanitized.songs
+                playlists = Self.normalizedSystemGroups(sanitized.playlists)
             } catch {
                 loadFailed = true
                 persistenceProtectionActive = true
@@ -173,8 +177,9 @@ final class AppState {
 
         Self.persistenceQueue.sync { [weak self] in
             do {
-                try Self.writePersistenceSnapshot(snapshot)
-                self?.markPersistenceWriteSucceeded()
+                guard let self else { return }
+                try Self.writePersistenceSnapshot(snapshot, to: self.persistenceStoreURL)
+                self.markPersistenceWriteSucceeded()
             } catch {
                 self?.reportPersistenceWriteFailure(error)
             }
@@ -953,6 +958,37 @@ final class AppState {
         var playlists: [Playlist]
     }
 
+    private static var stripsBundledSampleData: Bool {
+        if let override = stripsBundledSampleDataOverride {
+            return override
+        }
+#if DEBUG
+        return false
+#else
+        return true
+#endif
+    }
+
+    private static func sanitizedPersistedLibrary(_ persisted: PersistedLibrary) -> PersistedLibrary {
+        guard stripsBundledSampleData else { return persisted }
+
+        let songs = persisted.songs.filter { $0.fileURL != nil }
+        guard songs.count != persisted.songs.count else { return persisted }
+
+        let songIds = Set(songs.map(\.id))
+        let albumIds = Set(songs.compactMap(\.albumId))
+        let albums = persisted.albums.filter { albumIds.contains($0.id) }
+        let playlists = persisted.playlists.map { playlist in
+            var playlist = playlist
+            playlist.songIds = playlist.songIds.filter { songIds.contains($0) }
+            return playlist
+        }.filter { playlist in
+            isFavoritesGroupId(playlist.id) || !playlist.songIds.isEmpty
+        }
+
+        return PersistedLibrary(albums: albums, songs: songs, playlists: playlists)
+    }
+
     private var currentPersistenceSnapshot: PersistedLibrary {
         PersistedLibrary(albums: albums, songs: library, playlists: playlists)
     }
@@ -1017,7 +1053,7 @@ final class AppState {
             persistenceLock.unlock()
 
             do {
-                try Self.writePersistenceSnapshot(snapshot)
+                try Self.writePersistenceSnapshot(snapshot, to: persistenceStoreURL)
                 markPersistenceWriteSucceeded()
             } catch {
                 reportPersistenceWriteFailure(error)
@@ -1047,9 +1083,9 @@ final class AppState {
         }
     }
 
-    private static func writePersistenceSnapshot(_ snapshot: PersistedLibrary) throws {
+    private static func writePersistenceSnapshot(_ snapshot: PersistedLibrary, to url: URL) throws {
         let data = try JSONEncoder().encode(snapshot)
-        try data.write(to: Self.storeURL, options: .atomic)
+        try data.write(to: url, options: .atomic)
     }
 }
 
