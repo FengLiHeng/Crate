@@ -122,6 +122,41 @@ final class PlayerStoreTests: XCTestCase {
         XCTAssertTrue(waitForCondition { store.currentId == nil && !store.isPlaying })
         XCTAssertFalse(fakeEngine.playCalled)
     }
+
+    func testEngineFailureMarksTrackMissingAndSkipsForward() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let firstURL = tempDir.appendingPathComponent("first.mp3")
+        let secondURL = tempDir.appendingPathComponent("second.mp3")
+        FileManager.default.createFile(atPath: firstURL.path, contents: Data([0]), attributes: nil)
+        FileManager.default.createFile(atPath: secondURL.path, contents: Data([0]), attributes: nil)
+
+        let first = Song(id: "first", title: "First", artist: nil, albumId: nil, duration: 10, fileURL: firstURL)
+        let second = Song(id: "second", title: "Second", artist: nil, albumId: nil, duration: 10, fileURL: secondURL)
+        let songs = Dictionary(uniqueKeysWithValues: [first, second].map { ($0.id, $0) })
+        let firstEngine = FakeEngine()
+        let secondEngine = FakeEngine()
+        var toasts: [String] = []
+        var missingIds: [String] = []
+
+        let store = PlayerStore()
+        store.songProvider = { songs[$0] }
+        store.onToast = { toasts.append($0) }
+        store.onMissing = { missingIds.append($0) }
+        store.engineBuildQueue = DispatchQueue(label: "crate-tests-engine-failure-build")
+        store.engineFactory = { url, _ in
+            url == firstURL ? firstEngine : secondEngine
+        }
+
+        store.playFrom([first, second], index: 0)
+        XCTAssertTrue(waitForCondition { store.currentId == first.id && firstEngine.playCalled })
+
+        firstEngine.fail()
+
+        XCTAssertTrue(waitForCondition { store.currentId == second.id && secondEngine.playCalled })
+        XCTAssertEqual(missingIds, [first.id])
+        XCTAssertTrue(toasts.contains("「First」的文件不可用，已跳过"))
+    }
 }
 
 @MainActor
@@ -275,6 +310,7 @@ final class AppStatePersistenceTests: XCTestCase {
 
 private final class FakeEngine: PlaybackEngine {
     var onFinished: (() -> Void)?
+    var onFailed: (() -> Void)?
     var currentTime: Double = 0
     var playCalled = false
 
@@ -283,6 +319,7 @@ private final class FakeEngine: PlaybackEngine {
     func seek(to time: Double) { currentTime = time }
     func setVolume(_ volume: Double) {}
     func stop() {}
+    func fail() { onFailed?() }
 }
 
 @MainActor

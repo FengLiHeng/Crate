@@ -49,7 +49,7 @@ final class PlayerStore {
     /// 播放撞到文件缺失/无法解码时回调，供 AppState 即时标记失效（design.md D2）
     @ObservationIgnored var onMissing: (String) -> Void = { _ in }
     @ObservationIgnored var engineFactory: (URL, Double) throws -> PlaybackEngine = { url, volume in
-        try AVAudioPlayerEngine(url: url, volume: volume)
+        try FilePlaybackEngine(url: url, volume: volume)
     }
     @ObservationIgnored var engineBuildQueue: DispatchQueue = .global(qos: .userInitiated)
 
@@ -540,20 +540,32 @@ final class PlayerStore {
                         self.handleUnplayable(song: song, direction: skipOnMissing)
                         return
                     }
-                    self.attachAndPlay(e)
+                    self.attachAndPlay(e, token: token, failureSong: song, skipOnFailure: skipOnMissing)
                 }
             }
         } else {
             // 示例曲目：模拟进度，无 IO，直接接管
-            attachAndPlay(SimulatedEngine(duration: song.duration))
+            attachAndPlay(SimulatedEngine(duration: song.duration), token: token)
         }
     }
 
     /// 成功取得引擎后接管播放，并清空本轮跳过记录
-    private func attachAndPlay(_ e: PlaybackEngine) {
+    private func attachAndPlay(
+        _ e: PlaybackEngine,
+        token: Int,
+        failureSong: Song? = nil,
+        skipOnFailure: SkipDirection = .forward
+    ) {
         skipVisited.removeAll()
         engine = e
-        e.onFinished = { [weak self] in self?.handleFinished() }
+        e.onFinished = { [weak self] in
+            guard let self, self.playToken == token else { return }
+            self.handleFinished()
+        }
+        e.onFailed = { [weak self] in
+            guard let self, self.playToken == token, let failureSong else { return }
+            self.handleUnplayable(song: failureSong, direction: skipOnFailure)
+        }
         e.seek(to: progress)
         e.play()
         isPlaying = true

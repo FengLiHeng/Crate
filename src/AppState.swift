@@ -1,7 +1,6 @@
 import SwiftUI
 import Observation
 import AVFoundation
-import UniformTypeIdentifiers
 
 enum LibraryView: Hashable {
     case library
@@ -60,10 +59,21 @@ final class AppState {
         var sidecarArtworkData: Data?
     }
 
+    struct FilenameMetadata: Equatable {
+        var title: String
+        var artist: String?
+    }
+
     private struct BackfilledArtwork {
         var songId: String
         var path: String
         var artworkData: Data
+    }
+
+    private struct RelocationUpdate {
+        var songId: String
+        var oldPath: String
+        var newURL: URL
     }
 
     // ── 主题（持久化键与设计稿 localStorage 对齐） ──
@@ -130,7 +140,7 @@ final class AppState {
                 let persisted = try JSONDecoder().decode(PersistedLibrary.self, from: data)
                 let sanitized = Self.sanitizedPersistedLibrary(persisted)
                 albums = sanitized.albums
-                library = sanitized.songs
+                library = Self.songsWithFilenameMetadataFallback(sanitized.songs)
                 playlists = Self.normalizedSystemGroups(sanitized.playlists)
             } catch {
                 loadFailed = true
@@ -286,7 +296,7 @@ final class AppState {
             lyricsPage = nil
             return
         }
-        guard let page = loadLyricsPage(for: song, reportFailure: false) else {
+        guard let page = loadLyricsPage(for: song, reportFailure: true) else {
             lyricsPage = nil
             return
         }
@@ -528,40 +538,70 @@ final class AppState {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.audio]
+        panel.allowedContentTypes = AudioFileSupport.contentTypes
         panel.prompt = "重新定位"
         guard panel.runModal() == .OK, let newURL = panel.urls.first else { return }
         guard let oldURL = song.fileURL else { return }
-        guard Self.canDecodeAudio(at: newURL) else {
-            showToast("所选文件不可播放")
-            return
-        }
-        allowPersistenceAfterUserChange()
 
         let oldDir = oldURL.deletingLastPathComponent().standardizedFileURL.path
         let newDir = newURL.deletingLastPathComponent()
+        let oldPath = oldURL.standardizedFileURL.path
+        let songId = song.id
+        let songTitle = song.title
+        let librarySnapshot = library
+        let missingIdsSnapshot = missingIds
+
+        Task.detached(priority: .userInitiated) { [weak self, librarySnapshot, missingIdsSnapshot] in
+            guard Self.canDecodeAudio(at: newURL) else {
+                await self?.showRelocationFailure()
+                return
+            }
+
+            var updates = [
+                RelocationUpdate(songId: songId, oldPath: oldPath, newURL: newURL)
+            ]
+            for s in librarySnapshot {
+                // 仅修复同一旧目录、且新目录下存在同名文件的其他失效曲目
+                guard s.id != songId,
+                      missingIdsSnapshot.contains(s.id),
+                      let sURL = s.fileURL,
+                      sURL.deletingLastPathComponent().standardizedFileURL.path == oldDir else { continue }
+                let candidate = newDir.appendingPathComponent(sURL.lastPathComponent)
+                if Self.canDecodeAudio(at: candidate) {
+                    updates.append(RelocationUpdate(
+                        songId: s.id,
+                        oldPath: sURL.standardizedFileURL.path,
+                        newURL: candidate
+                    ))
+                }
+            }
+
+            await self?.applyRelocationUpdates(updates, songTitle: songTitle)
+        }
+    }
+
+    @MainActor private func showRelocationFailure() {
+        showToast("所选文件不可播放")
+    }
+
+    @MainActor private func applyRelocationUpdates(_ updates: [RelocationUpdate], songTitle: String) {
         var updated = library
         var fixed = 0
-        for i in updated.indices {
-            let s = updated[i]
-            if s.id == song.id {
-                updated[i].fileURL = newURL
-                clearMissing(s.id)
-                fixed += 1
-                continue
-            }
-            // 仅修复同一旧目录、且新目录下存在同名文件的其他失效曲目
-            guard missingIds.contains(s.id), let sURL = s.fileURL,
-                  sURL.deletingLastPathComponent().standardizedFileURL.path == oldDir else { continue }
-            let candidate = newDir.appendingPathComponent(sURL.lastPathComponent)
-            if Self.canDecodeAudio(at: candidate) {
-                updated[i].fileURL = candidate
-                clearMissing(s.id)
-                fixed += 1
-            }
+        for update in updates {
+            guard let index = updated.firstIndex(where: { $0.id == update.songId }),
+                  updated[index].fileURL?.standardizedFileURL.path == update.oldPath else { continue }
+            updated[index].fileURL = update.newURL
+            clearMissing(update.songId)
+            fixed += 1
         }
+        guard fixed > 0 else {
+            showToast("曲目已变化，未应用重新定位")
+            return
+        }
+
+        allowPersistenceAfterUserChange()
         library = updated
-        showToast(fixed > 1 ? "已重新定位 \(fixed) 首曲目" : "已重新定位「\(song.title)」")
+        showToast(fixed > 1 ? "已重新定位 \(fixed) 首曲目" : "已重新定位「\(songTitle)」")
     }
 
     /// 一键移除所有失效曲目，同步分组与播放上下文（spec: track-availability）
@@ -593,11 +633,8 @@ final class AppState {
 
     // ── 导入（spec: library-import） ──
 
-    static let audioExtensions: Set<String> = ["mp3", "m4a", "flac", "wav", "aac", "aiff"]
-
     static func canDecodeAudio(at url: URL) -> Bool {
-        guard FileManager.default.fileExists(atPath: url.path) else { return false }
-        return (try? AVAudioPlayer(contentsOf: url)) != nil
+        AudioFileSupport.canDecode(at: url)
     }
 
     func importViaPanel() {
@@ -605,7 +642,7 @@ final class AppState {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.allowedContentTypes = [.audio]
+        panel.allowedContentTypes = AudioFileSupport.contentTypes
         panel.prompt = "导入"
         if panel.runModal() == .OK {
             importFiles(panel.urls)
@@ -638,7 +675,7 @@ final class AppState {
     }
 
     func importFiles(_ urls: [URL]) {
-        let audioURLs = urls.filter { Self.audioExtensions.contains($0.pathExtension.lowercased()) }
+        let audioURLs = urls.filter { AudioFileSupport.isSupportedExtension($0) }
         guard !audioURLs.isEmpty else {
             showToast("未发现可导入的音频文件")
             return
@@ -788,8 +825,10 @@ final class AppState {
 
     /// 读取元数据：标题/艺术家/专辑/真实时长/封面，缺失回退（spec: 元数据解析）
     private static func parseMetadata(url: URL) async -> ParsedMetadata? {
+        let filenameStem = url.deletingPathExtension().lastPathComponent
         let asset = AVURLAsset(url: url)
-        var title = url.deletingPathExtension().lastPathComponent
+        var title = filenameStem
+        var hasMetadataTitle = false
         var artist: String?
         var albumName: String?
         var artworkData: Data?
@@ -804,9 +843,18 @@ final class AppState {
                 guard let key = item.commonKey else { continue }
                 switch key {
                 case .commonKeyTitle:
-                    if let value = try? await item.load(.stringValue), !value.isEmpty { title = value }
+                    if let value = try? await item.load(.stringValue) {
+                        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            title = trimmed
+                            hasMetadataTitle = true
+                        }
+                    }
                 case .commonKeyArtist:
-                    artist = try? await item.load(.stringValue)
+                    if let value = try? await item.load(.stringValue) {
+                        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                        artist = trimmed.isEmpty ? nil : trimmed
+                    }
                 case .commonKeyAlbumName:
                     albumName = try? await item.load(.stringValue)
                 case .commonKeyArtwork:
@@ -823,15 +871,76 @@ final class AppState {
             sidecarArtworkData = Self.sidecarArtworkData(for: url)
             artworkData = sidecarArtworkData
         }
+        let fallback = metadataWithFilenameFallback(
+            filenameStem: filenameStem,
+            title: title,
+            hasMetadataTitle: hasMetadataTitle,
+            artist: artist
+        )
 
         return ParsedMetadata(
-            title: title,
-            artist: artist,
+            title: fallback.title,
+            artist: fallback.artist,
             albumName: albumName,
             duration: duration,
             embeddedArtworkData: artworkData,
             sidecarArtworkData: sidecarArtworkData
         )
+    }
+
+    static func metadataWithFilenameFallback(
+        filenameStem: String,
+        title: String,
+        hasMetadataTitle: Bool,
+        artist: String?
+    ) -> FilenameMetadata {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safeTitle = trimmedTitle.isEmpty ? filenameStem : trimmedTitle
+        let trimmedArtist = artist?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmedArtist, !trimmedArtist.isEmpty {
+            return FilenameMetadata(title: safeTitle, artist: trimmedArtist)
+        }
+        guard let filenameMetadata = metadataFromFilenameStem(filenameStem) else {
+            return FilenameMetadata(title: safeTitle, artist: nil)
+        }
+        return FilenameMetadata(
+            title: hasMetadataTitle ? safeTitle : filenameMetadata.title,
+            artist: filenameMetadata.artist
+        )
+    }
+
+    static func metadataFromFilenameStem(_ stem: String) -> FilenameMetadata? {
+        let pattern = #"^(.+)\s+[-–—－]\s+(.+)$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(stem.startIndex..<stem.endIndex, in: stem)
+        guard let match = regex.firstMatch(in: stem, range: range),
+              match.numberOfRanges == 3,
+              let titleRange = Range(match.range(at: 1), in: stem),
+              let artistRange = Range(match.range(at: 2), in: stem) else { return nil }
+        let title = String(stem[titleRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let artist = String(stem[artistRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, !artist.isEmpty else { return nil }
+        return FilenameMetadata(title: title, artist: artist)
+    }
+
+    static func songsWithFilenameMetadataFallback(_ songs: [Song]) -> [Song] {
+        songs.map { song in
+            var updated = song
+            guard let fileURL = song.fileURL else { return updated }
+            let trimmedArtist = song.artist?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmedArtist?.isEmpty ?? true else { return updated }
+
+            let filenameStem = fileURL.deletingPathExtension().lastPathComponent
+            let fallback = metadataWithFilenameFallback(
+                filenameStem: filenameStem,
+                title: song.title,
+                hasMetadataTitle: song.title != filenameStem,
+                artist: song.artist
+            )
+            updated.title = fallback.title
+            updated.artist = fallback.artist
+            return updated
+        }
     }
 
     private static func isValidArtworkData(_ data: Data) -> Bool {
