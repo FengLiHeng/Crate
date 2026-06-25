@@ -273,6 +273,7 @@ private struct SongRow: View {
     var onPlay: () -> Void
 
     @Environment(AppState.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
 
     private var isCurrent: Bool { song.id == app.player.currentId }
@@ -286,6 +287,7 @@ private struct SongRow: View {
             ZStack {
                 if isCurrent {
                     EqBars(paused: !app.player.isPlaying, accent: app.tokens.accent)
+                        .transition(.opacity)
                 } else if hovering {
                     Button(action: onPlay) {
                         Image(systemName: "play.fill")
@@ -294,11 +296,13 @@ private struct SongRow: View {
                             .frame(width: 26, height: 26)
                     }
                     .buttonStyle(.plain)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.92)))
                 } else {
                     Text("\(index + 1)")
                         .font(.system(size: 12.5))
                         .monospacedDigit()
                         .foregroundStyle(app.tokens.text3)
+                        .transition(.opacity)
                 }
             }
             .frame(width: 44)
@@ -344,6 +348,8 @@ private struct SongRow: View {
             }
             .frame(width: 40)
             .opacity(hovering || isSelected ? 1 : 0)
+            .animation(MotionTokens.feedback, value: hovering)
+            .animation(MotionTokens.feedback, value: isSelected)
         }
         .opacity(isMissing ? 0.45 : 1)   // 失效曲目置灰（背景层在 .background 中保持原样）
         .padding(.horizontal, 8)
@@ -357,6 +363,9 @@ private struct SongRow: View {
         .gesture(TapGesture(count: 2).onEnded { onPlay() })
         .simultaneousGesture(TapGesture(count: 1).onEnded { app.selectedId = song.id })
         .contextMenu { SongContextMenu(song: song) }
+        .animation(MotionTokens.feedback, value: hovering)
+        .animation(MotionTokens.feedback, value: isSelected)
+        .animation(MotionTokens.feedback, value: isCurrent)
     }
 }
 

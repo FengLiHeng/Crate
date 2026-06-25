@@ -131,6 +131,36 @@ struct ThemeTokens {
     }
 }
 
+// MARK: - 动效令牌
+
+enum MotionTokens {
+    static let press = Animation.easeOut(duration: 0.08)
+    static let feedback = Animation.easeOut(duration: 0.12)
+    static let stateChange = Animation.easeInOut(duration: 0.18)
+    static let progress = Animation.linear(duration: 0.22)
+    static let toast = Animation.easeOut(duration: 0.22)
+    static let pageTransition = Animation.spring(response: 0.36, dampingFraction: 0.9, blendDuration: 0.02)
+    static let panelTransition = Animation.spring(response: 0.32, dampingFraction: 0.88, blendDuration: 0.02)
+    static let lyricFocus = Animation.spring(response: 0.28, dampingFraction: 0.86, blendDuration: 0.02)
+    static let listChange = Animation.easeInOut(duration: 0.18)
+
+    static func page(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeOut(duration: 0.16) : pageTransition
+    }
+
+    static func panel(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeOut(duration: 0.14) : panelTransition
+    }
+
+    static func lyric(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeOut(duration: 0.16) : lyricFocus
+    }
+
+    static func list(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeOut(duration: 0.12) : listChange
+    }
+}
+
 // MARK: - 封面占位与播放条氛围色
 
 extension Album {

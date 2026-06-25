@@ -8,6 +8,7 @@ struct SidebarView: View {
     @State private var draggedGroupId: String?
     @State private var dragStartIndex: Int?
     @State private var dragTranslation: CGFloat = 0
+    @State private var suppressedSelectionGroupId: String?
     @State private var groupName = ""
 
     private let groupRowHeight: CGFloat = 32
@@ -32,7 +33,10 @@ struct SidebarView: View {
                             icon: "music.note.list",
                             label: pl.name,
                             active: app.view == .playlist(pl.id)
-                        ) { app.view = .playlist(pl.id) }
+                        ) {
+                            guard suppressedSelectionGroupId != pl.id else { return }
+                            app.view = .playlist(pl.id)
+                        }
                         .contextMenu {
                             if !app.isSystemGroup(pl) {
                                 Button("重命名") {
@@ -48,7 +52,7 @@ struct SidebarView: View {
                         .offset(y: rowOffset(for: pl.id, at: index))
                         .scaleEffect(draggedGroupId == pl.id ? 1.015 : 1)
                         .zIndex(draggedGroupId == pl.id ? 1 : 0)
-                        .animation(draggedGroupId == pl.id ? nil : .easeOut(duration: 0.12), value: dragTargetIndex)
+                        .animation(MotionTokens.feedback, value: dragTargetIndex)
                         .gesture(groupDragGesture(for: pl.id, at: index))
                     }
                 }
@@ -153,6 +157,10 @@ struct SidebarView: View {
                 dragTranslation = value.translation.height
             }
             .onEnded { _ in
+                let shouldSuppressSelection = draggedGroupId == groupId && abs(dragTranslation) > 4
+                if shouldSuppressSelection {
+                    suppressedSelectionGroupId = groupId
+                }
                 if draggedGroupId == groupId,
                    let dragStartIndex,
                    let dragTargetIndex,
@@ -160,6 +168,13 @@ struct SidebarView: View {
                     app.moveGroup(groupId, to: dragTargetIndex)
                 }
                 resetGroupDrag()
+                if shouldSuppressSelection {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        if suppressedSelectionGroupId == groupId {
+                            suppressedSelectionGroupId = nil
+                        }
+                    }
+                }
             }
     }
 
@@ -302,27 +317,32 @@ private struct SideItem: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(app.tokens.accent)
-                .frame(width: 16)
-            Text(label)
-                .font(.system(size: 13, weight: active ? .semibold : .regular))
-                .foregroundStyle(active ? app.tokens.accent : app.tokens.text)
-                .lineLimit(1)
-            Spacer(minLength: 0)
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(app.tokens.accent)
+                    .frame(width: 16)
+                Text(label)
+                    .font(.system(size: 13, weight: active ? .semibold : .regular))
+                    .foregroundStyle(active ? app.tokens.accent : app.tokens.text)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(active ? app.tokens.accentSoft : (hovering ? app.tokens.hover : .clear))
+            )
+            .scaleEffect(hovering && !active ? 1.006 : 1)
+            .contentShape(Rectangle())
+            .animation(MotionTokens.feedback, value: hovering)
+            .animation(MotionTokens.feedback, value: active)
         }
-        .padding(.horizontal, 10)
-        .frame(height: 30)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(active ? app.tokens.accentSoft : (hovering ? app.tokens.hover : .clear))
-        )
+        .buttonStyle(.plain)
         .padding(.horizontal, 10)
         .padding(.vertical, 1)
-        .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .onTapGesture(perform: action)
     }
 }

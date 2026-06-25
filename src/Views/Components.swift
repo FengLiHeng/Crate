@@ -216,13 +216,15 @@ struct EqBars: View {
     var paused: Bool
     var accent: Color
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: paused)) { ctx in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: paused || reduceMotion)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
             HStack(alignment: .bottom, spacing: 2) {
                 ForEach(0..<3, id: \.self) { i in
                     let phase = t / 0.9 - Double(i) * 0.28
-                    let h = paused ? 5.0 : 4.0 + 10.0 * (0.5 - 0.5 * cos(phase * 2 * .pi))
+                    let h = (paused || reduceMotion) ? 5.0 : 4.0 + 10.0 * (0.5 - 0.5 * cos(phase * 2 * .pi))
                     Capsule(style: .continuous)
                         .fill(accent)
                         .frame(width: 3, height: h)
@@ -254,6 +256,7 @@ struct UISlider: View {
                 // 已填充
                 Capsule().fill(app.tokens.accent)
                     .frame(width: Swift.max(4, pct * w), height: 4)
+                    .animation(MotionTokens.progress, value: pct)
                 // 滑块（hover 时出现）
                 Circle()
                     .fill(app.tokens.thumb)
@@ -262,7 +265,8 @@ struct UISlider: View {
                     .overlay(Circle().strokeBorder(app.tokens.thumbStroke, lineWidth: 0.5))
                     .offset(x: pct * w - 5.5)
                     .scaleEffect(hovering ? 1 : 0.001)
-                    .animation(.easeOut(duration: 0.12), value: hovering)
+                    .animation(MotionTokens.progress, value: pct)
+                    .animation(MotionTokens.feedback, value: hovering)
             }
             .frame(height: 18)
             .contentShape(Rectangle())
@@ -314,6 +318,7 @@ struct IconButton: View {
 
     @Environment(AppState.self) private var app
     @State private var hovering = false
+    @State private var pressed = false
 
     var body: some View {
         Button(action: action) {
@@ -325,11 +330,26 @@ struct IconButton: View {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(active ? app.tokens.accentSoft : (hovering ? app.tokens.hover : .clear))
                 )
+                .scaleEffect(pressed ? 0.94 : 1)
+                .animation(MotionTokens.feedback, value: hovering)
+                .animation(MotionTokens.feedback, value: active)
+                .animation(MotionTokens.press, value: pressed)
         }
         .buttonStyle(.plain)
         .disabled(disabled)
         .opacity(disabled ? 0.35 : 1)
         .onHover { hovering = $0 }
         .help(help)
+        .pressEvents(onPress: { pressed = true }, onRelease: { pressed = false })
+    }
+}
+
+extension View {
+    func pressEvents(onPress: @escaping () -> Void, onRelease: @escaping () -> Void) -> some View {
+        simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in onPress() }
+                .onEnded { _ in onRelease() }
+        )
     }
 }

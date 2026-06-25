@@ -18,6 +18,7 @@ struct LibraryContentView: View {
 
 private struct ContentHeader: View {
     @Environment(AppState.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmClearLibrary = false
 
     var body: some View {
@@ -66,7 +67,9 @@ private struct ContentHeader: View {
                         systemName: app.theme == .light ? "moon" : "sun.max",
                         help: app.theme == .light ? "切换深色模式" : "切换浅色模式"
                     ) {
-                        app.theme = app.theme == .light ? .dark : .light
+                        withAnimation(MotionTokens.page(reduceMotion: reduceMotion)) {
+                            app.theme = app.theme == .light ? .dark : .light
+                        }
                     }
                 }
             }
@@ -99,9 +102,12 @@ private struct ContentHeader: View {
 private struct SearchField: View {
     @Binding var text: String
     @Environment(AppState.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focused: Bool
 
     var body: some View {
+        let clearTransition: AnyTransition = reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9))
+
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12, weight: .medium))
@@ -119,11 +125,17 @@ private struct SearchField: View {
                         .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.plain)
+                .transition(clearTransition)
             }
         }
         .padding(.horizontal, 10)
         .frame(width: 200, height: 32)
         .background(app.tokens.ctrl, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .animation(MotionTokens.feedback, value: text.isEmpty)
+        .task {
+            await Task.yield()
+            focused = false
+        }
     }
 }
 
@@ -136,22 +148,28 @@ private struct ToolButton: View {
     var action: () -> Void
 
     @State private var hovering = false
+    @State private var pressed = false
 
     var body: some View {
         Button(action: action) {
             ToolButtonChrome(systemName: systemName, hovering: hovering, disabled: disabled)
+                .scaleEffect(pressed ? 0.94 : 1)
+                .animation(MotionTokens.feedback, value: hovering)
+                .animation(MotionTokens.press, value: pressed)
         }
         .buttonStyle(.plain)
         .disabled(disabled)
         .opacity(disabled ? 0.35 : 1)
         .onHover { hovering = $0 }
         .help(help)
+        .pressEvents(onPress: { pressed = true }, onRelease: { pressed = false })
     }
 }
 
 private struct ImportMenuButton: View {
     @Environment(AppState.self) private var app
     @State private var hovering = false
+    @State private var pressed = false
 
     var body: some View {
         Button {
@@ -161,10 +179,14 @@ private struct ImportMenuButton: View {
             ).show()
         } label: {
             ToolButtonChrome(systemName: "plus", hovering: hovering)
+                .scaleEffect(pressed ? 0.94 : 1)
+                .animation(MotionTokens.feedback, value: hovering)
+                .animation(MotionTokens.press, value: pressed)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help("导入音乐")
+        .pressEvents(onPress: { pressed = true }, onRelease: { pressed = false })
     }
 }
 
@@ -246,6 +268,7 @@ private struct CapsuleButton: View {
 
     @Environment(AppState.self) private var app
     @State private var hovering = false
+    @State private var pressed = false
 
     var body: some View {
         Button(action: action) {
@@ -261,10 +284,14 @@ private struct CapsuleButton: View {
                     .fill(primary ? app.tokens.accent : app.tokens.ctrl)
             )
             .brightness(hovering && !disabled ? (primary ? 0.06 : -0.03) : 0)
+            .scaleEffect(pressed ? 0.975 : 1)
+            .animation(MotionTokens.feedback, value: hovering)
+            .animation(MotionTokens.press, value: pressed)
         }
         .buttonStyle(.plain)
         .disabled(disabled)
         .opacity(disabled ? 0.35 : 1)
         .onHover { hovering = $0 }
+        .pressEvents(onPress: { pressed = true }, onRelease: { pressed = false })
     }
 }

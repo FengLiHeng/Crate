@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PlayBarView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let song = app.player.currentSong
@@ -35,6 +36,8 @@ struct PlayBarView: View {
                 }
             }
         }
+        .animation(MotionTokens.stateChange, value: song?.id)
+        .animation(MotionTokens.stateChange, value: album?.id)
         .overlay(alignment: .top) {
             Rectangle().fill(app.tokens.sep).frame(height: 1)
         }
@@ -43,9 +46,13 @@ struct PlayBarView: View {
     // ── 左侧：当前曲目（player.css .pb-now） ──
     @ViewBuilder
     private func nowPlaying(song: Song?, album: Album?) -> some View {
+        let songTransition: AnyTransition = reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom))
+
         HStack(spacing: 12) {
             if let song {
                 LyricsCoverButton(song: song, album: album)
+                    .id(song.id)
+                    .transition(songTransition)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.title)
                         .font(.system(size: 13.5, weight: .semibold))
@@ -57,6 +64,8 @@ struct PlayBarView: View {
                         .lineLimit(1)
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .id(song.id)
+                .transition(songTransition)
             } else {
                 CoverView(size: 48, radius: 7)
                 Text("未在播放")
@@ -137,7 +146,7 @@ struct PlayBarView: View {
                 systemName: "list.triangle", size: 15, side: 30,
                 active: app.queueOpen, help: "待播清单"
             ) {
-                withAnimation(.spring(duration: 0.28)) { app.queueOpen.toggle() }
+                withAnimation(MotionTokens.panel(reduceMotion: reduceMotion)) { app.queueOpen.toggle() }
             }
         }
     }
@@ -148,12 +157,15 @@ private struct LyricsCoverButton: View {
     var album: Album?
 
     @Environment(AppState.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
     @State private var pressed = false
 
     var body: some View {
         Button {
-            app.openLyricsForCurrentSong()
+            withAnimation(MotionTokens.page(reduceMotion: reduceMotion)) {
+                app.openLyricsForCurrentSong()
+            }
         } label: {
             CoverView(song: song, album: album, size: 48, radius: 7)
                 .overlay {
@@ -172,8 +184,8 @@ private struct LyricsCoverButton: View {
                         .offset(x: 3, y: 3)
                 }
                 .scaleEffect(pressed ? 0.95 : 1)
-                .animation(.easeOut(duration: 0.12), value: hovering)
-                .animation(.easeOut(duration: 0.08), value: pressed)
+                .animation(MotionTokens.feedback, value: hovering)
+                .animation(MotionTokens.press, value: pressed)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -212,9 +224,9 @@ private struct FavoriteButton: View {
                     .fill(isFavorite ? app.tokens.accentSoft : (hovering ? app.tokens.hover : .clear))
             )
             .scaleEffect(pressed ? 0.94 : 1)
-            .animation(.easeOut(duration: 0.14), value: isFavorite)
-            .animation(.easeOut(duration: 0.12), value: hovering)
-            .animation(.easeOut(duration: 0.08), value: pressed)
+            .animation(MotionTokens.feedback, value: isFavorite)
+            .animation(MotionTokens.feedback, value: hovering)
+            .animation(MotionTokens.press, value: pressed)
         }
         .buttonStyle(.plain)
         .disabled(song == nil)
@@ -230,10 +242,13 @@ private struct PlayButton: View {
     var disabled: Bool
 
     @Environment(AppState.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
     @State private var pressed = false
 
     var body: some View {
+        let iconTransition: ContentTransition = reduceMotion ? .opacity : .symbolEffect(.replace)
+
         Button { app.player.togglePlay() } label: {
             Image(systemName: app.player.isPlaying ? "pause.fill" : "play.fill")
                 .font(.system(size: 17, weight: .semibold))
@@ -243,22 +258,15 @@ private struct PlayButton: View {
                 .shadow(color: .black.opacity(0.25), radius: 1.5, y: 1)
                 .brightness(hovering && !disabled ? 0.06 : 0)
                 .scaleEffect(pressed ? 0.94 : 1)
+                .contentTransition(iconTransition)
+                .animation(MotionTokens.feedback, value: app.player.isPlaying)
+                .animation(MotionTokens.feedback, value: hovering)
+                .animation(MotionTokens.press, value: pressed)
         }
         .buttonStyle(.plain)
         .disabled(disabled)
         .opacity(disabled ? 0.35 : 1)
         .onHover { hovering = $0 }
         .pressEvents(onPress: { pressed = true }, onRelease: { pressed = false })
-    }
-}
-
-// 按压缩放辅助
-private extension View {
-    func pressEvents(onPress: @escaping () -> Void, onRelease: @escaping () -> Void) -> some View {
-        simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in onPress() }
-                .onEnded { _ in onRelease() }
-        )
     }
 }

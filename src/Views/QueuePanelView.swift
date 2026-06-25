@@ -3,6 +3,7 @@ import SwiftUI
 // 待播清单面板（player.css .queue-panel / player-views.jsx QueuePanel）
 struct QueuePanelView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let manualIds = app.player.manualQueue
@@ -19,13 +20,17 @@ struct QueuePanelView: View {
                     .foregroundStyle(app.tokens.text)
                 Spacer()
                 if hasUpcoming {
-                    Button("清空") { app.player.clearQueue() }
+                    Button("清空") {
+                        withAnimation(MotionTokens.list(reduceMotion: reduceMotion)) {
+                            app.player.clearQueue()
+                        }
+                    }
                         .buttonStyle(.plain)
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(app.tokens.accent)
                 }
                 IconButton(systemName: "xmark", size: 11, side: 24, help: "关闭") {
-                    withAnimation(.spring(duration: 0.28)) { app.queueOpen = false }
+                    withAnimation(MotionTokens.panel(reduceMotion: reduceMotion)) { app.queueOpen = false }
                 }
             }
             .padding(.init(top: 16, leading: 18, bottom: 10, trailing: 14))
@@ -43,8 +48,13 @@ struct QueuePanelView: View {
                                     QueueRow(
                                         song: song, isCurrent: false, removable: true,
                                         onPlay: { app.player.playManualAt(i) },
-                                        onRemove: { app.player.removeManualAt(i) }
+                                        onRemove: {
+                                            withAnimation(MotionTokens.list(reduceMotion: reduceMotion)) {
+                                                app.player.removeManualAt(i)
+                                            }
+                                        }
                                     )
+                                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .trailing)))
                                 }
                             }
                         }
@@ -56,6 +66,7 @@ struct QueuePanelView: View {
                                         song: song, isCurrent: false,
                                         onPlay: { app.player.playContextAt(index - upcomingStart) }
                                     )
+                                    .transition(.opacity)
                                 }
                             }
                         }
@@ -67,6 +78,9 @@ struct QueuePanelView: View {
                     }
                 }
                 .padding(.init(top: 0, leading: 10, bottom: 16, trailing: 10))
+                .animation(MotionTokens.list(reduceMotion: reduceMotion), value: manualIds)
+                .animation(MotionTokens.list(reduceMotion: reduceMotion), value: contextIds)
+                .animation(MotionTokens.list(reduceMotion: reduceMotion), value: app.player.currentId)
             }
         }
         .frame(width: 300)
@@ -94,6 +108,7 @@ private struct QueueRow: View {
     var onRemove: (() -> Void)?
 
     @Environment(AppState.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
 
     var body: some View {
@@ -117,6 +132,7 @@ private struct QueueRow: View {
                 IconButton(systemName: "xmark", size: 10, side: 22, help: "从队列移除") {
                     onRemove?()
                 }
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.92)))
             }
         }
         .padding(.horizontal, 8)
@@ -125,8 +141,11 @@ private struct QueueRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(hovering && !isCurrent ? app.tokens.hover : .clear)
         )
+        .scaleEffect(hovering && !isCurrent && !reduceMotion ? 1.006 : 1)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .gesture(TapGesture(count: 2).onEnded { onPlay?() })
+        .animation(MotionTokens.feedback, value: hovering)
+        .animation(MotionTokens.feedback, value: isCurrent)
     }
 }

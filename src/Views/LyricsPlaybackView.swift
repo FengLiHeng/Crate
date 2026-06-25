@@ -4,6 +4,7 @@ struct LyricsPlaybackView: View {
     var page: LyricsPageState
 
     @Environment(AppState.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var lastScrolledLineId: Int?
 
     private var song: Song? {
@@ -44,6 +45,7 @@ struct LyricsPlaybackView: View {
                         )
                     }
                 }
+                .animation(MotionTokens.stateChange, value: album?.id)
             }
         }
     }
@@ -66,6 +68,8 @@ struct LyricsPlaybackView: View {
 
             if let song {
                 CoverView(song: song, album: album, size: min(250, width - 72), radius: 16)
+                    .scaleEffect(app.player.isPlaying && !reduceMotion ? 1.012 : 1)
+                    .animation(MotionTokens.lyric(reduceMotion: reduceMotion), value: app.player.isPlaying)
                 VStack(alignment: .leading, spacing: 7) {
                     Text(song.title)
                         .font(.system(size: 25, weight: .bold))
@@ -112,6 +116,7 @@ struct LyricsPlaybackView: View {
             .onChange(of: currentLineId) { _, _ in
                 scrollToCurrentLine(proxy: proxy, animated: true)
             }
+            .animation(MotionTokens.lyric(reduceMotion: reduceMotion), value: currentLineId)
         }
     }
 
@@ -127,11 +132,19 @@ struct LyricsPlaybackView: View {
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, active ? 11 : 8)
+                .padding(.leading, active && !reduceMotion ? 8 : 0)
+                .overlay(alignment: .leading) {
+                    Capsule(style: .continuous)
+                        .fill(app.tokens.accent)
+                        .frame(width: 3, height: active ? 28 : 0)
+                        .opacity(active ? 0.85 : 0)
+                        .offset(x: -14)
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(formatTime(line.time))
-        .animation(.easeOut(duration: 0.18), value: active)
+        .animation(MotionTokens.lyric(reduceMotion: reduceMotion), value: active)
     }
 
     private func scrollToCurrentLine(proxy: ScrollViewProxy, animated: Bool) {
@@ -141,7 +154,7 @@ struct LyricsPlaybackView: View {
             proxy.scrollTo(currentLineId, anchor: .center)
         }
         if animated {
-            withAnimation(.easeInOut(duration: 0.32)) { action() }
+            withAnimation(MotionTokens.lyric(reduceMotion: reduceMotion)) { action() }
         } else {
             action()
         }
