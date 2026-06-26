@@ -27,7 +27,7 @@ struct RootView: View {
                     .scaleEffect(app.queueOpen && !reduceMotion ? 0.996 : 1, anchor: .leading)
                     .transition(pageTransition)
                 }
-                if app.queueOpen, app.lyricsPage == nil {
+                if app.queueOpen {
                     QueuePanelView()
                         .transition(queueTransition)
                 }

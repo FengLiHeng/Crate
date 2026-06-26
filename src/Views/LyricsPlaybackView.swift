@@ -7,6 +7,8 @@ struct LyricsPlaybackView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var lastScrolledLineId: Int?
 
+    private let lyricsViewportTopPadding: CGFloat = 42
+
     private var song: Song? {
         app.songsById[page.songId] ?? app.player.currentSong
     }
@@ -110,6 +112,7 @@ struct LyricsPlaybackView: View {
                 .padding(.horizontal, 54)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .padding(.top, lyricsViewportTopPadding)
             .onAppear {
                 scrollToCurrentLine(proxy: proxy, animated: false)
             }

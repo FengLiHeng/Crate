@@ -146,7 +146,7 @@ struct PlayBarView: View {
                 systemName: "list.triangle", size: 15, side: 30,
                 active: app.queueOpen, help: "待播清单"
             ) {
-                withAnimation(MotionTokens.panel(reduceMotion: reduceMotion)) { app.queueOpen.toggle() }
+                withAnimation(MotionTokens.panel(reduceMotion: reduceMotion)) { app.toggleQueue() }
             }
         }
     }

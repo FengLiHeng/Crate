@@ -105,7 +105,7 @@ final class AppState {
     var view: LibraryView = .library
     var search = ""
     var selectedId: String?
-    var queueOpen = false
+    private(set) var queueOpen = false
     var toast: String?
     var dragOver = false
     var lyricsPage: LyricsPageState?
@@ -275,6 +275,20 @@ final class AppState {
         song.albumId.flatMap { albumsById[$0]?.title } ?? "未知专辑"
     }
 
+    // ── 待播清单面板 ──
+
+    func openQueue() {
+        queueOpen = true
+    }
+
+    func closeQueue() {
+        queueOpen = false
+    }
+
+    func toggleQueue() {
+        queueOpen.toggle()
+    }
+
     // ── 歌词（同名 .lrc sidecar） ──
 
     func openLyricsForCurrentSong() {
@@ -283,10 +297,12 @@ final class AppState {
             return
         }
         guard let page = loadLyricsPage(for: song, reportFailure: true) else { return }
+        closeQueue()
         lyricsPage = page
     }
 
     func closeLyricsPage() {
+        closeQueue()
         lyricsPage = nil
     }
 

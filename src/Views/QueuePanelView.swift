@@ -30,7 +30,7 @@ struct QueuePanelView: View {
                         .foregroundStyle(app.tokens.accent)
                 }
                 IconButton(systemName: "xmark", size: 11, side: 24, help: "关闭") {
-                    withAnimation(MotionTokens.panel(reduceMotion: reduceMotion)) { app.queueOpen = false }
+                    withAnimation(MotionTokens.panel(reduceMotion: reduceMotion)) { app.closeQueue() }
                 }
             }
             .padding(.init(top: 16, leading: 18, bottom: 10, trailing: 14))
