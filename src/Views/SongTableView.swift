@@ -385,8 +385,8 @@ private struct SongContextMenu: View {
 
     var body: some View {
         Button("立即播放") { app.player.playSongNow(song) }
-        Button("添加到下一首播放") { app.player.playNextSong(song) }
-        Button("添加到待播清单") { app.player.addToQueue(song) }
+        Button("下一首播放") { app.player.playNextSong(song) }
+        Button("加入待播清单") { app.player.addToQueue(song) }
         Divider()
         if !addablePlaylists.isEmpty {
             Menu("添加到分组") {
@@ -400,10 +400,13 @@ private struct SongContextMenu: View {
             Button("重新定位…") { app.relocate(song) }
         }
         Button("在 Finder 中显示") { app.revealInFinder(song) }
+        if song.fileURL != nil {
+            Button("移到废纸篓并移除记录…", role: .destructive) { app.deleteLocalFile(for: song) }
+        }
         if let playlist = app.viewPlaylist {
             Button("从此分组移除", role: .destructive) { app.removeSong(song, from: playlist) }
         } else {
-            Button("从资料库中删除", role: .destructive) { app.removeSong(song) }
+            Button("仅从资料库移除", role: .destructive) { app.removeSong(song) }
         }
     }
 }

@@ -497,6 +497,11 @@ final class AppState {
 
     func removeSong(_ song: Song) {
         allowPersistenceAfterUserChange()
+        removeSongRecord(song)
+        showToast("已从资料库移除「\(song.title)」")
+    }
+
+    private func removeSongRecord(_ song: Song) {
         library.removeAll { $0.id == song.id }
         updatePlaylists { groups in
             groups.map { group in
@@ -506,7 +511,48 @@ final class AppState {
             }
         }
         player.handleSongRemoved(song.id)
-        showToast("已从资料库中删除「\(song.title)」")
+        if selectedId == song.id {
+            selectedId = nil
+        }
+        clearMissing(song.id)
+    }
+
+    func deleteLocalFile(for song: Song) {
+        guard let url = song.fileURL?.standardizedFileURL else {
+            showToast("示例曲目没有对应文件")
+            return
+        }
+        guard confirmDeleteLocalFile(songTitle: song.title, fileName: url.lastPathComponent) else { return }
+
+        let fileExists = FileManager.default.fileExists(atPath: url.path)
+        if fileExists {
+            do {
+                var trashedURL: NSURL?
+                try FileManager.default.trashItem(at: url, resultingItemURL: &trashedURL)
+            } catch {
+                showToast("删除文件失败：\(error.localizedDescription)")
+                return
+            }
+        }
+
+        allowPersistenceAfterUserChange()
+        removeSongRecord(song)
+        if fileExists {
+            showToast("已将「\(song.title)」移到废纸篓并移除资料库记录")
+        } else {
+            showToast("本地文件已不存在，已移除「\(song.title)」的资料库记录")
+        }
+    }
+
+    private func confirmDeleteLocalFile(songTitle: String, fileName: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "移到废纸篓并移除记录？"
+        alert.informativeText = "这会将本地文件「\(fileName)」移到废纸篓，并从 Crate 资料库中移除「\(songTitle)」。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "移到废纸篓")
+        alert.addButton(withTitle: "取消")
+        alert.buttons.first?.hasDestructiveAction = true
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     func removeSong(_ song: Song, from playlist: Playlist) {

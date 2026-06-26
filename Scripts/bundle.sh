@@ -4,6 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SWIFT_BUILD_FLAGS_ARRAY=()
+APP_VERSION="${APP_VERSION:-1.5.0}"
+APP_BUILD="${APP_BUILD:-5}"
 if [[ -n "${SWIFT_BUILD_FLAGS:-}" ]]; then
     # 允许受限环境传入 --disable-sandbox 等 SwiftPM 构建参数；默认不改变本地打包行为。
     SWIFT_BUILD_FLAGS_ARRAY=(${SWIFT_BUILD_FLAGS})
@@ -69,7 +71,7 @@ PY
 fi
 rm -rf "$ICONSET"
 
-cat > "$APP/Contents/Info.plist" <<'EOF'
+cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -87,9 +89,9 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>${APP_VERSION}</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>${APP_BUILD}</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSArchitecturePriority</key>
@@ -104,4 +106,4 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 </plist>
 EOF
 
-echo "已生成 ${APP}（arm64）"
+echo "已生成 ${APP}（arm64，版本 ${APP_VERSION} (${APP_BUILD})）"
