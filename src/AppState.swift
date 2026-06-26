@@ -525,20 +525,26 @@ final class AppState {
         guard confirmDeleteLocalFile(songTitle: song.title, fileName: url.lastPathComponent) else { return }
 
         let fileExists = FileManager.default.fileExists(atPath: url.path)
+        let sidecarURLs = existingDeletionSidecarURLs(for: url)
         if fileExists {
             do {
-                var trashedURL: NSURL?
-                try FileManager.default.trashItem(at: url, resultingItemURL: &trashedURL)
+                try moveToTrash(url)
             } catch {
                 showToast("删除文件失败：\(error.localizedDescription)")
                 return
             }
         }
+        let failedSidecars = moveSidecarsToTrash(sidecarURLs)
 
         allowPersistenceAfterUserChange()
         removeSongRecord(song)
-        if fileExists {
-            showToast("已将「\(song.title)」移到废纸篓并移除资料库记录")
+        if !failedSidecars.isEmpty {
+            let names = failedSidecars.map(\.lastPathComponent).joined(separator: "、")
+            showToast("已移除「\(song.title)」，但未能删除：\(names)")
+        } else if fileExists {
+            let sidecarCount = sidecarURLs.count
+            let suffix = sidecarCount > 0 ? "，并同步移除 \(sidecarCount) 个关联文件" : ""
+            showToast("已将「\(song.title)」移到废纸篓并移除资料库记录\(suffix)")
         } else {
             showToast("本地文件已不存在，已移除「\(song.title)」的资料库记录")
         }
@@ -547,12 +553,35 @@ final class AppState {
     private func confirmDeleteLocalFile(songTitle: String, fileName: String) -> Bool {
         let alert = NSAlert()
         alert.messageText = "移到废纸篓并移除记录？"
-        alert.informativeText = "这会将本地文件「\(fileName)」移到废纸篓，并从 Crate 资料库中移除「\(songTitle)」。"
+        alert.informativeText = "这会将本地音频文件「\(fileName)」移到废纸篓，并同步移除同名 .jpg 专辑图片和 .lrc 歌词文件；同时会从 Crate 资料库中移除「\(songTitle)」。"
         alert.alertStyle = .warning
         alert.addButton(withTitle: "移到废纸篓")
         alert.addButton(withTitle: "取消")
         alert.buttons.first?.hasDestructiveAction = true
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func existingDeletionSidecarURLs(for audioURL: URL) -> [URL] {
+        let baseURL = audioURL.deletingPathExtension()
+        return ["jpg", "lrc"]
+            .map { baseURL.appendingPathExtension($0).standardizedFileURL }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    private func moveSidecarsToTrash(_ urls: [URL]) -> [URL] {
+        urls.filter { url in
+            do {
+                try moveToTrash(url)
+                return false
+            } catch {
+                return true
+            }
+        }
+    }
+
+    private func moveToTrash(_ url: URL) throws {
+        var trashedURL: NSURL?
+        try FileManager.default.trashItem(at: url, resultingItemURL: &trashedURL)
     }
 
     func removeSong(_ song: Song, from playlist: Playlist) {
