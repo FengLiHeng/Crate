@@ -102,7 +102,7 @@ struct LyricsPlaybackView: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     Color.clear.frame(height: 120)
                     ForEach(Array(page.lyrics.lines.enumerated()), id: \.element.id) { index, line in
-                        lyricLine(line, active: index == currentLineIndex)
+                        LyricLineView(line: line, active: index == currentLineIndex)
                             .id(line.id)
                     }
                     Color.clear.frame(height: 150)
@@ -118,33 +118,6 @@ struct LyricsPlaybackView: View {
             }
             .animation(MotionTokens.lyric(reduceMotion: reduceMotion), value: currentLineId)
         }
-    }
-
-    private func lyricLine(_ line: LyricLine, active: Bool) -> some View {
-        Button {
-            app.player.seek(to: line.time)
-        } label: {
-            Text(line.text.isEmpty ? " " : line.text)
-                .font(.system(size: active ? 28 : 19, weight: active ? .bold : .semibold))
-                .foregroundStyle(active ? app.tokens.text : app.tokens.text2)
-                .opacity(active ? 1 : 0.52)
-                .lineSpacing(5)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, active ? 11 : 8)
-                .padding(.leading, active && !reduceMotion ? 8 : 0)
-                .overlay(alignment: .leading) {
-                    Capsule(style: .continuous)
-                        .fill(app.tokens.accent)
-                        .frame(width: 3, height: active ? 28 : 0)
-                        .opacity(active ? 0.85 : 0)
-                        .offset(x: -14)
-                }
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(formatTime(line.time))
-        .animation(MotionTokens.lyric(reduceMotion: reduceMotion), value: active)
     }
 
     private func scrollToCurrentLine(proxy: ScrollViewProxy, animated: Bool) {
