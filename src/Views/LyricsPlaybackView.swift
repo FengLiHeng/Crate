@@ -69,7 +69,7 @@ struct LyricsPlaybackView: View {
             Spacer(minLength: 0)
 
             if let song {
-                CoverView(song: song, album: album, size: min(250, width - 72), radius: 16)
+                CoverView(song: song, album: album, size: min(250, width - 72), radius: 0)
                     .scaleEffect(app.player.isPlaying && !reduceMotion ? 1.012 : 1)
                     .animation(MotionTokens.lyric(reduceMotion: reduceMotion), value: app.player.isPlaying)
                 VStack(alignment: .leading, spacing: 7) {
