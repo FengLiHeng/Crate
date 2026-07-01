@@ -119,7 +119,8 @@ private struct SearchField: View {
                 .focused($focused)
             if !text.isEmpty {
                 Button { text = "" } label: {
-                    Image(systemName: "xmark")
+                    Label("清除搜索", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(app.tokens.text2)
                         .frame(width: 18, height: 18)
@@ -152,7 +153,7 @@ private struct ToolButton: View {
 
     var body: some View {
         Button(action: action) {
-            ToolButtonChrome(systemName: systemName, hovering: hovering, disabled: disabled)
+            ToolButtonChrome(systemName: systemName, label: help, hovering: hovering, disabled: disabled)
                 .scaleEffect(pressed ? 0.94 : 1)
                 .animation(MotionTokens.feedback, value: hovering)
                 .animation(MotionTokens.press, value: pressed)
@@ -178,7 +179,7 @@ private struct ImportMenuButton: View {
                 importFolder: { app.importFolderViaPanel() }
             ).show()
         } label: {
-            ToolButtonChrome(systemName: "plus", hovering: hovering)
+            ToolButtonChrome(systemName: "plus", label: "导入音乐", hovering: hovering)
                 .scaleEffect(pressed ? 0.94 : 1)
                 .animation(MotionTokens.feedback, value: hovering)
                 .animation(MotionTokens.press, value: pressed)
@@ -239,13 +240,15 @@ private final class ImportMenuActionTarget: NSObject, NSMenuDelegate {
 
 private struct ToolButtonChrome: View {
     var systemName: String
+    var label: String
     var hovering: Bool
     var disabled = false
 
     @Environment(AppState.self) private var app
 
     var body: some View {
-        Image(systemName: systemName)
+        Label(label, systemImage: systemName)
+            .labelStyle(.iconOnly)
             .font(.system(size: 14, weight: .medium))
             .foregroundStyle(hovering && !disabled ? app.tokens.text : app.tokens.text2)
             .frame(width: 32, height: 32)

@@ -290,7 +290,8 @@ private struct SongRow: View {
                         .transition(.opacity)
                 } else if hovering {
                     Button(action: onPlay) {
-                        Image(systemName: "play.fill")
+                        Label("播放歌曲", systemImage: "play.fill")
+                            .labelStyle(.iconOnly)
                             .font(.system(size: 11))
                             .foregroundStyle(app.tokens.text)
                             .frame(width: 26, height: 26)
