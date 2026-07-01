@@ -239,6 +239,7 @@ struct EqBars: View {
 // MARK: - 自绘滑杆（进度/音量，player-ui.jsx Slider + player.css .slider）
 
 struct UISlider: View {
+    var label: String = "滑杆"
     var value: Double
     var max: Double = 1
     var onChange: (Double) -> Void
@@ -246,9 +247,27 @@ struct UISlider: View {
     @Environment(AppState.self) private var app
     @State private var hovering = false
 
+    private var clampedMax: Double {
+        Swift.max(max, 0)
+    }
+
+    private var clampedValue: Double {
+        guard clampedMax > 0 else { return 0 }
+        return min(Swift.max(value, 0), clampedMax)
+    }
+
+    private var percent: Double {
+        guard clampedMax > 0 else { return 0 }
+        return clampedValue / clampedMax
+    }
+
+    private var accessibilityValue: String {
+        "\(Int((percent * 100).rounded()))%"
+    }
+
     var body: some View {
         GeometryReader { geo in
-            let pct = max > 0 ? min(Swift.max(value / max, 0), 1) : 0
+            let pct = percent
             let w = geo.size.width
             ZStack(alignment: .leading) {
                 // 轨道
@@ -264,22 +283,40 @@ struct UISlider: View {
                     .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
                     .overlay(Circle().strokeBorder(app.tokens.thumbStroke, lineWidth: 0.5))
                     .offset(x: pct * w - 5.5)
-                    .scaleEffect(hovering ? 1 : 0.001)
-                    .animation(MotionTokens.progress, value: pct)
-                    .animation(MotionTokens.feedback, value: hovering)
+                    .opacity(hovering ? 1 : 0)
             }
             .frame(height: 18)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { g in
-                        let v = min(Swift.max(g.location.x / w, 0), 1) * max
+                        guard w > 0 else { return }
+                        let v = min(Swift.max(g.location.x / w, 0), 1) * clampedMax
                         onChange(v)
                     }
             )
         }
         .frame(height: 18)
         .onHover { hovering = $0 }
+        .accessibilityElement()
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(Text(accessibilityValue))
+        .accessibilityAdjustableAction { direction in
+            adjustAccessibilityValue(direction)
+        }
+    }
+
+    private func adjustAccessibilityValue(_ direction: AccessibilityAdjustmentDirection) {
+        guard clampedMax > 0 else { return }
+        let step = Swift.max(clampedMax / 20, 0.05)
+        switch direction {
+        case .increment:
+            onChange(min(clampedValue + step, clampedMax))
+        case .decrement:
+            onChange(Swift.max(clampedValue - step, 0))
+        @unknown default:
+            break
+        }
     }
 }
 
@@ -320,9 +357,14 @@ struct IconButton: View {
     @State private var hovering = false
     @State private var pressed = false
 
+    private var accessibilityTitle: String {
+        help.isEmpty ? systemName : help
+    }
+
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemName)
+            Label(accessibilityTitle, systemImage: systemName)
+                .labelStyle(.iconOnly)
                 .font(.system(size: size, weight: .medium))
                 .foregroundStyle(active ? app.tokens.accent : (hovering ? app.tokens.text : app.tokens.text2))
                 .frame(width: side, height: side)

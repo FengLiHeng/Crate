@@ -57,7 +57,8 @@ struct LyricsPlaybackView: View {
             Button {
                 app.closeLyricsPage()
             } label: {
-                Image(systemName: "chevron.left")
+                Label("返回", systemImage: "chevron.left")
+                    .labelStyle(.iconOnly)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(app.tokens.text)
                     .frame(width: 34, height: 34)

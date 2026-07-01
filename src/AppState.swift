@@ -254,14 +254,14 @@ final class AppState {
 
     var viewSongs: [Song] {
         var list = viewPlaybackSongs
-        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
         if !q.isEmpty {
             list = list.filter { s in
                 let album = s.albumId.flatMap { albumsById[$0] }
                 let artist = s.artist ?? album?.artist ?? ""
-                return s.title.lowercased().contains(q)
-                    || artist.lowercased().contains(q)
-                    || (album?.title.lowercased().contains(q) ?? false)
+                return s.title.localizedStandardContains(q)
+                    || artist.localizedStandardContains(q)
+                    || (album?.title.localizedStandardContains(q) ?? false)
             }
         }
         return list
@@ -817,6 +817,8 @@ final class AppState {
             showToast(msg)
         } else if skippedExisting > 0 {
             showToast("文件已在资料库中")
+        } else if result.skippedBroken > 0 {
+            showToast("\(result.skippedBroken) 个文件无法解码")
         } else {
             showToast("未发现可导入的音频文件")
         }

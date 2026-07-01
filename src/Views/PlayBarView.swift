@@ -103,7 +103,7 @@ struct PlayBarView: View {
             HStack(spacing: 10) {
                 Text(song != nil ? formatTime(player.progress) : "-:--")
                     .frame(width: 40, alignment: .leading)
-                UISlider(value: song != nil ? player.progress : 0, max: song?.duration ?? 1) { v in
+                UISlider(label: "播放进度", value: song != nil ? player.progress : 0, max: song?.duration ?? 1) { v in
                     if song != nil { player.seek(to: v) }
                 }
                 Text(song != nil ? "-" + formatTime((song?.duration ?? 0) - player.progress) : "-:--")
@@ -140,7 +140,8 @@ struct PlayBarView: View {
             Image(systemName: app.player.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
                 .font(.system(size: 13))
                 .foregroundStyle(app.tokens.text2)
-            UISlider(value: app.player.volume, max: 1) { app.player.volume = $0 }
+                .accessibilityHidden(true)
+            UISlider(label: "音量", value: app.player.volume, max: 1) { app.player.volume = $0 }
                 .frame(width: 90)
             IconButton(
                 systemName: "list.triangle", size: 15, side: 30,
@@ -190,6 +191,7 @@ private struct LyricsCoverButton: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help("打开歌词页")
+        .accessibilityLabel("打开歌词页")
         .pressEvents(onPress: { pressed = true }, onRelease: { pressed = false })
     }
 }
@@ -233,6 +235,7 @@ private struct FavoriteButton: View {
         .opacity(song == nil ? 0.35 : 1)
         .onHover { hovering = $0 }
         .help(isFavorite ? "取消收藏" : "收藏")
+        .accessibilityLabel(isFavorite ? "取消收藏" : "收藏")
         .pressEvents(onPress: { pressed = true }, onRelease: { pressed = false })
     }
 }
@@ -267,6 +270,8 @@ private struct PlayButton: View {
         .disabled(disabled)
         .opacity(disabled ? 0.35 : 1)
         .onHover { hovering = $0 }
+        .help(app.player.isPlaying ? "暂停" : "播放")
+        .accessibilityLabel(app.player.isPlaying ? "暂停" : "播放")
         .pressEvents(onPress: { pressed = true }, onRelease: { pressed = false })
     }
 }
