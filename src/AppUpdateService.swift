@@ -105,16 +105,46 @@ enum AppUpdateCheckResult: Equatable, Sendable {
     case available(AvailableAppUpdate)
 }
 
+struct AppUpdateDownloadProgress: Equatable, Sendable {
+    var downloadedBytes: Int64
+    var totalBytes: Int64?
+
+    var fractionCompleted: Double? {
+        guard let totalBytes, totalBytes > 0 else { return nil }
+        return min(max(Double(downloadedBytes) / Double(totalBytes), 0), 1)
+    }
+
+    var percentText: String? {
+        guard let fractionCompleted else { return nil }
+        return "\(Int((fractionCompleted * 100).rounded()))%"
+    }
+
+    var message: String {
+        if let totalBytes {
+            return "正在下载更新包 \(percentText ?? "")（\(Self.formattedBytes(downloadedBytes)) / \(Self.formattedBytes(totalBytes))）"
+        }
+        return "正在下载更新包（已下载 \(Self.formattedBytes(downloadedBytes))）"
+    }
+
+    static func formattedBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
+    }
+}
+
 enum AppUpdatePhase: Equatable {
     case idle
     case checking
-    case downloading(String)
+    case downloading(AppUpdateDownloadProgress)
+    case preparingInstall(String)
     case installing(String)
     case failed(String)
 
     var isBusy: Bool {
         switch self {
-        case .checking, .downloading, .installing:
+        case .checking, .downloading, .preparingInstall, .installing:
             return true
         case .idle, .failed:
             return false
@@ -127,9 +157,18 @@ enum AppUpdatePhase: Equatable {
             return nil
         case .checking:
             return "正在检查更新..."
-        case .downloading(let message), .installing(let message), .failed(let message):
+        case .downloading(let progress):
+            return progress.message
+        case .preparingInstall(let message), .installing(let message), .failed(let message):
             return message
         }
+    }
+
+    var downloadFractionCompleted: Double? {
+        if case .downloading(let progress) = self {
+            return progress.fractionCompleted
+        }
+        return nil
     }
 }
 
@@ -256,7 +295,14 @@ struct AppUpdateService: Sendable {
         }
     }
 
-    func downloadAndScheduleInstall(_ update: AvailableAppUpdate) async throws {
+    typealias DownloadProgressHandler = @Sendable (AppUpdateDownloadProgress) async -> Void
+    typealias UpdateStageHandler = @Sendable (String) async -> Void
+
+    func downloadAndScheduleInstall(
+        _ update: AvailableAppUpdate,
+        progress: @escaping DownloadProgressHandler = { _ in },
+        stage: @escaping UpdateStageHandler = { _ in }
+    ) async throws {
         let fileManager = FileManager.default
         let workDir = fileManager.temporaryDirectory
             .appendingPathComponent("CrateUpdate-\(UUID().uuidString)", isDirectory: true)
@@ -272,30 +318,87 @@ struct AppUpdateService: Sendable {
         let extractDir = workDir.appendingPathComponent("Extracted", isDirectory: true)
         try fileManager.createDirectory(at: extractDir, withIntermediateDirectories: true)
 
-        var request = URLRequest(url: update.asset.browserDownloadURL)
+        try await download(update.asset, to: archiveURL, progress: progress)
+
+        await stage("正在解压更新包...")
+        try extractZip(at: archiveURL, to: extractDir)
+        await stage("正在校验更新包...")
+        let extractedAppURL = try findExtractedApp(in: extractDir)
+        try validateExtractedApp(extractedAppURL, expectedVersion: update.version)
+        let currentAppURL = try currentAppBundleURL()
+        try validateWritableInstallLocation(for: currentAppURL)
+        await stage("正在启动安装器...")
+        try scheduleReplacement(currentAppURL: currentAppURL, newAppURL: extractedAppURL, workDir: workDir)
+        shouldCleanWorkDir = false
+    }
+
+    private func download(
+        _ asset: GitHubReleaseAsset,
+        to archiveURL: URL,
+        progress: @escaping DownloadProgressHandler
+    ) async throws {
+        let fileManager = FileManager.default
+        var request = URLRequest(url: asset.browserDownloadURL)
         request.setValue("Crate Update Checker", forHTTPHeaderField: "User-Agent")
-        let (downloadedURL, response) = try await URLSession.shared.download(for: request)
+
+        let byteStream: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (byteStream, response) = try await URLSession.shared.bytes(for: request)
+        } catch {
+            throw AppUpdateError.downloadFailed
+        }
+
         if let httpResponse = response as? HTTPURLResponse,
            !(200..<300).contains(httpResponse.statusCode) {
             throw AppUpdateError.httpStatus(httpResponse.statusCode)
         }
 
+        let responseLength = response.expectedContentLength > 0 ? response.expectedContentLength : nil
+        let assetLength = asset.size.flatMap { $0 > 0 ? Int64($0) : nil }
+        let totalBytes = responseLength ?? assetLength
+
         do {
             if fileManager.fileExists(atPath: archiveURL.path) {
                 try fileManager.removeItem(at: archiveURL)
             }
-            try fileManager.moveItem(at: downloadedURL, to: archiveURL)
+            guard fileManager.createFile(atPath: archiveURL.path, contents: nil),
+                  let fileHandle = FileHandle(forWritingAtPath: archiveURL.path) else {
+                throw AppUpdateError.downloadFailed
+            }
+            defer { try? fileHandle.close() }
+
+            var downloadedBytes: Int64 = 0
+            var buffer = Data()
+            buffer.reserveCapacity(64 * 1024)
+            var lastReportedMessage: String?
+
+            func report(force: Bool = false) async {
+                let current = AppUpdateDownloadProgress(downloadedBytes: downloadedBytes, totalBytes: totalBytes)
+                guard force || current.message != lastReportedMessage else { return }
+                lastReportedMessage = current.message
+                await progress(current)
+            }
+
+            await report(force: true)
+            for try await byte in byteStream {
+                buffer.append(byte)
+                guard buffer.count >= 64 * 1024 else { continue }
+                try fileHandle.write(contentsOf: buffer)
+                downloadedBytes += Int64(buffer.count)
+                buffer.removeAll(keepingCapacity: true)
+                await report()
+            }
+            if !buffer.isEmpty {
+                try fileHandle.write(contentsOf: buffer)
+                downloadedBytes += Int64(buffer.count)
+            }
+            await report(force: true)
+        } catch let updateError as AppUpdateError {
+            throw updateError
         } catch {
             throw AppUpdateError.downloadFailed
         }
-
-        try extractZip(at: archiveURL, to: extractDir)
-        let extractedAppURL = try findExtractedApp(in: extractDir)
-        try validateExtractedApp(extractedAppURL, expectedVersion: update.version)
-        let currentAppURL = try currentAppBundleURL()
-        try validateWritableInstallLocation(for: currentAppURL)
-        try scheduleReplacement(currentAppURL: currentAppURL, newAppURL: extractedAppURL, workDir: workDir)
-        shouldCleanWorkDir = false
     }
 
     static func compatibleAsset(
@@ -389,6 +492,8 @@ struct AppUpdateService: Sendable {
 
     private func scheduleReplacement(currentAppURL: URL, newAppURL: URL, workDir: URL) throws {
         let scriptURL = workDir.appendingPathComponent("install-crate-update.sh")
+        let logURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CrateUpdate-\(UUID().uuidString).log")
         let script = Self.installationScript
 
         do {
@@ -398,14 +503,56 @@ struct AppUpdateService: Sendable {
             throw AppUpdateError.installScriptFailed(error.localizedDescription)
         }
 
+        let launcher = Self.installerLauncher(
+            scriptURL: scriptURL,
+            currentAppURL: currentAppURL,
+            newAppURL: newAppURL,
+            workDir: workDir,
+            logURL: logURL
+        )
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = [scriptURL.path, currentAppURL.path, newAppURL.path, workDir.path]
+        process.executableURL = launcher.executableURL
+        process.arguments = launcher.arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
         do {
             try process.run()
+            process.waitUntilExit()
         } catch {
             throw AppUpdateError.installScriptFailed(error.localizedDescription)
         }
+        guard process.terminationStatus == 0 else {
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            throw AppUpdateError.installScriptFailed(output?.isEmpty == false ? output! : "退出码 \(process.terminationStatus)")
+        }
+    }
+
+    static func installerLauncher(
+        scriptURL: URL,
+        currentAppURL: URL,
+        newAppURL: URL,
+        workDir: URL,
+        logURL: URL
+    ) -> (executableURL: URL, arguments: [String]) {
+        let launcher = """
+        /usr/bin/nohup /bin/sh "$1" "$2" "$3" "$4" > "$5" 2>&1 < /dev/null &
+        """
+        return (
+            URL(fileURLWithPath: "/bin/sh"),
+            [
+                "-c",
+                launcher,
+                "crate-update-installer-launcher",
+                scriptURL.path,
+                currentAppURL.path,
+                newAppURL.path,
+                workDir.path,
+                logURL.path
+            ]
+        )
     }
 
     static var installationScript: String {

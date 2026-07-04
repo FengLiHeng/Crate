@@ -46,8 +46,11 @@ struct AppUpdateDialogView: View {
             }
 
             if let message = app.updatePhase.message {
-                HStack(spacing: 8) {
-                    if app.updatePhase.isBusy {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let fraction = app.updatePhase.downloadFractionCompleted {
+                        ProgressView(value: fraction)
+                            .progressViewStyle(.linear)
+                    } else if app.updatePhase.isBusy {
                         ProgressView()
                             .controlSize(.small)
                     }
@@ -89,6 +92,8 @@ struct AppUpdateDialogView: View {
             return "正在检查"
         case .downloading:
             return "正在下载"
+        case .preparingInstall:
+            return "正在准备"
         case .installing:
             return "正在安装"
         case .idle, .failed:

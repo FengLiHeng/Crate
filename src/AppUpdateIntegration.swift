@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 
 extension AppState {
@@ -28,15 +29,30 @@ extension AppState {
     @MainActor
     func installAvailableUpdate() {
         guard let update = availableUpdate, !updatePhase.isBusy else { return }
-        updatePhase = .downloading("正在下载 \(update.asset.name)...")
+        let initialProgress = AppUpdateDownloadProgress(
+            downloadedBytes: 0,
+            totalBytes: update.asset.size.map(Int64.init)
+        )
+        updatePhase = .downloading(initialProgress)
 
         Task.detached(priority: .userInitiated) {
             let service = AppUpdateService()
             do {
-                try await service.downloadAndScheduleInstall(update)
+                try await service.downloadAndScheduleInstall(
+                    update,
+                    progress: { progress in
+                        await MainActor.run { [weak self] in
+                            self?.updatePhase = .downloading(progress)
+                        }
+                    },
+                    stage: { message in
+                        await MainActor.run { [weak self] in
+                            self?.updatePhase = .preparingInstall(message)
+                        }
+                    }
+                )
                 await MainActor.run { [weak self] in
-                    self?.updatePhase = .installing("正在退出并安装更新...")
-                    NSApp.terminate(nil)
+                    self?.beginUpdateTermination()
                 }
             } catch {
                 await MainActor.run { [weak self] in
@@ -78,5 +94,21 @@ extension AppState {
         }
         updatePhase = .failed(message)
         showToast(message)
+    }
+
+    @MainActor
+    private func beginUpdateTermination() {
+        updatePhase = .installing("安装器已启动，正在退出 Crate...")
+        flushPersistence()
+        NSApp.terminate(nil)
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self,
+                  case .installing = self.updatePhase else { return }
+            self.updatePhase = .installing("安装器已启动，正在强制退出 Crate...")
+            self.flushPersistence()
+            Darwin.exit(0)
+        }
     }
 }

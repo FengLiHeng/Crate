@@ -19,6 +19,22 @@ final class AppUpdateServiceTests: XCTestCase {
         XCTAssertNil(AppVersion(""))
     }
 
+    func testDownloadProgressFormatsKnownTotal() {
+        let progress = AppUpdateDownloadProgress(downloadedBytes: 512, totalBytes: 1024)
+
+        XCTAssertEqual(progress.fractionCompleted, 0.5)
+        XCTAssertEqual(progress.percentText, "50%")
+        XCTAssertTrue(progress.message.contains("50%"))
+    }
+
+    func testDownloadProgressFormatsUnknownTotal() {
+        let progress = AppUpdateDownloadProgress(downloadedBytes: 2048, totalBytes: nil)
+
+        XCTAssertNil(progress.fractionCompleted)
+        XCTAssertNil(progress.percentText)
+        XCTAssertTrue(progress.message.contains("已下载"))
+    }
+
     func testCompatibleAssetPrefersExactCrateMacOSArm64Zip() throws {
         let exact = GitHubReleaseAsset(
             name: "Crate-v1.8-macOS-arm64.zip",
@@ -105,6 +121,25 @@ final class AppUpdateServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: currentApp.appendingPathComponent("partial.txt").path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: currentApp.path + ".previous"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: workDir.path))
+    }
+
+    func testInstallerLauncherStartsNoHupInBackgroundWithLogRedirection() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let launcher = AppUpdateService.installerLauncher(
+            scriptURL: tempDir.appendingPathComponent("install.sh"),
+            currentAppURL: tempDir.appendingPathComponent("Crate.app"),
+            newAppURL: tempDir.appendingPathComponent("NewCrate.app"),
+            workDir: tempDir.appendingPathComponent("Work"),
+            logURL: tempDir.appendingPathComponent("install.log")
+        )
+
+        XCTAssertEqual(launcher.executableURL.path, "/bin/sh")
+        XCTAssertEqual(launcher.arguments.first, "-c")
+        XCTAssertTrue(launcher.arguments[1].contains("/usr/bin/nohup"))
+        XCTAssertTrue(launcher.arguments[1].contains("&"))
+        XCTAssertTrue(launcher.arguments.contains(tempDir.appendingPathComponent("install.log").path))
     }
 }
 
