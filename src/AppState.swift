@@ -109,6 +109,9 @@ final class AppState {
     var toast: String?
     var dragOver = false
     var lyricsPage: LyricsPageState?
+    var updatePhase: AppUpdatePhase = .idle
+    var availableUpdate: AvailableAppUpdate?
+    var updateDialogPresented = false
 
     // ── 失效曲目（运行时派生，不持久化；design.md D1） ──
     var missingIds: Set<String> = []

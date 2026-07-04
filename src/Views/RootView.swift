@@ -63,6 +63,12 @@ struct RootView: View {
             }
         }
         .animation(MotionTokens.feedback, value: app.dragOver)
+        .sheet(isPresented: $app.updateDialogPresented) {
+            if let update = app.availableUpdate {
+                AppUpdateDialogView(update: update)
+                    .environment(app)
+            }
+        }
         // 快捷键：空格播放/暂停、⌘+→ 下一首（spec: playback 键盘快捷键）
         .onAppear { installEventMonitors() }
         .onDisappear {

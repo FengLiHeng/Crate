@@ -21,5 +21,14 @@ struct CrateApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1240, height: 760)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("检查更新...") {
+                    app.checkForUpdates()
+                }
+                .keyboardShortcut("u", modifiers: [.command, .shift])
+                .disabled(app.isUpdateBusy)
+            }
+        }
     }
 }
