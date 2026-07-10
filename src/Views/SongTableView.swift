@@ -343,12 +343,23 @@ private struct SongRow: View {
                 .foregroundStyle(app.tokens.text2)
                 .frame(width: 56, alignment: .trailing)
 
-            // 更多按钮（hover/选中可见）
-            IconButton(systemName: "ellipsis", size: 13, help: "更多") {
-                app.selectedId = song.id
+            // 更多菜单：与整行右键菜单复用同一组动作
+            Menu {
+                SongContextMenu(song: song)
+            } label: {
+                Label("更多", systemImage: "ellipsis")
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(app.tokens.text2)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
             }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("更多")
             .frame(width: 40)
-            .opacity(hovering || isSelected ? 1 : 0)
+            .opacity(hovering || isSelected ? 1 : 0.4)
             .animation(MotionTokens.feedback, value: hovering)
             .animation(MotionTokens.feedback, value: isSelected)
         }

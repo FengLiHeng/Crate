@@ -157,6 +157,77 @@ final class PlayerStoreTests: XCTestCase {
         XCTAssertEqual(missingIds, [first.id])
         XCTAssertTrue(toasts.contains("「First」的文件不可用，已跳过"))
     }
+
+    func testPreviousRestoresOriginWhenAllEarlierTracksAreUnavailable() {
+        let first = Song(
+            id: "first-missing",
+            title: "First Missing",
+            artist: nil,
+            albumId: nil,
+            duration: 10,
+            fileURL: URL(fileURLWithPath: "/tmp/crate-tests-first-missing.mp3")
+        )
+        let second = Song(
+            id: "second-missing",
+            title: "Second Missing",
+            artist: nil,
+            albumId: nil,
+            duration: 10,
+            fileURL: URL(fileURLWithPath: "/tmp/crate-tests-second-missing.mp3")
+        )
+        let origin = Song(id: "origin", title: "Origin", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let songs = Dictionary(uniqueKeysWithValues: [first, second, origin].map { ($0.id, $0) })
+        let store = PlayerStore()
+        var missingIds: [String] = []
+        var toasts: [String] = []
+        store.songProvider = { songs[$0] }
+        store.onMissing = { missingIds.append($0) }
+        store.onToast = { toasts.append($0) }
+
+        store.playFrom([first, second, origin], index: 2)
+        store.prev()
+
+        XCTAssertTrue(waitForCondition {
+            store.currentId == origin.id && store.ctx.pos == 2 && store.isPlaying
+        })
+        XCTAssertEqual(Set(missingIds), Set([first.id, second.id]))
+        XCTAssertFalse(toasts.contains("没有可播放的曲目"))
+    }
+
+    func testPreviousStopsWhenOriginAlsoBecomesUnavailable() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let originURL = tempDir.appendingPathComponent("origin.mp3")
+        FileManager.default.createFile(atPath: originURL.path, contents: Data([0]), attributes: nil)
+
+        let first = Song(
+            id: "first-missing",
+            title: "First Missing",
+            artist: nil,
+            albumId: nil,
+            duration: 10,
+            fileURL: tempDir.appendingPathComponent("first-missing.mp3")
+        )
+        let origin = Song(id: "origin", title: "Origin", artist: nil, albumId: nil, duration: 10, fileURL: originURL)
+        let songs = Dictionary(uniqueKeysWithValues: [first, origin].map { ($0.id, $0) })
+        let store = PlayerStore()
+        let originEngine = FakeEngine()
+        var toasts: [String] = []
+        store.songProvider = { songs[$0] }
+        store.engineBuildQueue = DispatchQueue(label: "crate-tests-backward-fallback")
+        store.engineFactory = { _, _ in originEngine }
+        store.onToast = { toasts.append($0) }
+
+        store.playFrom([first, origin], index: 1)
+        XCTAssertTrue(waitForCondition { originEngine.playCalled })
+        try FileManager.default.removeItem(at: originURL)
+
+        store.prev()
+
+        XCTAssertTrue(waitForCondition { store.currentId == nil })
+        XCTAssertFalse(store.isPlaying)
+        XCTAssertTrue(toasts.contains("没有可播放的曲目"))
+    }
 }
 
 @MainActor

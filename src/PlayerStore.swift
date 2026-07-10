@@ -63,6 +63,8 @@ final class PlayerStore {
     @ObservationIgnored private var skipVisited: Set<String> = []
     /// 播放代次：异步构造引擎期间用户若已切歌，旧构造结果按代次作废（design.md D5）
     @ObservationIgnored private var playToken = 0
+    /// “上一首”向后跳过失效曲目时保留的原有效上下文位置，边界无候选时回退
+    @ObservationIgnored private var backwardFallback: (id: String, contextPosition: Int)?
 
     init() {
         let saved = UserDefaults.standard.object(forKey: "lmp-volume") as? Double
@@ -215,6 +217,7 @@ final class PlayerStore {
         manualQueue = []
         ctx = Context()
         skipVisited.removeAll()
+        backwardFallback = nil
         stopProgressTimer()
     }
 
@@ -310,9 +313,11 @@ final class PlayerStore {
 
     func prev() {
         if progress > 3 || isManual {
+            backwardFallback = nil
             seek(to: 0)
             return
         }
+        backwardFallback = currentId.map { (id: $0, contextPosition: ctx.pos) }
         stepBackward()
     }
 
@@ -322,8 +327,17 @@ final class PlayerStore {
             ctx.pos -= 1
             isManual = false
             startPlaying(id: ctx.ids[ctx.pos], skipOnMissing: .backward)
+        } else if !skipVisited.isEmpty,
+                  let fallback = backwardFallback,
+                  !skipVisited.contains(fallback.id) {
+            ctx.pos = fallback.contextPosition
+            isManual = false
+            startPlaying(id: fallback.id, skipOnMissing: .backward)
+        } else if !skipVisited.isEmpty {
+            stopBecauseNoPlayableTracks()
         } else {
             // 已在第一首，前面再无可用曲目：停在当前曲首
+            backwardFallback = nil
             if currentId != nil { seek(to: 0) } else { stopPlayback() }
         }
     }
@@ -557,6 +571,7 @@ final class PlayerStore {
         skipOnFailure: SkipDirection = .forward
     ) {
         skipVisited.removeAll()
+        backwardFallback = nil
         engine = e
         e.onFinished = { [weak self] in
             guard let self, self.playToken == token else { return }
@@ -620,6 +635,7 @@ final class PlayerStore {
         isManual = false
         isPlaying = false
         progress = 0
+        backwardFallback = nil
         stopProgressTimer()
         savePlaybackMemorySoon()
     }

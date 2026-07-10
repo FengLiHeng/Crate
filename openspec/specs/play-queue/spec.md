@@ -78,3 +78,13 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 - **WHEN** 用户确认清空歌曲列表
 - **THEN** 当前播放停止，插播队列为空，播放上下文为空，待播清单不再显示任何旧歌曲
 
+### Requirement: Queue row actions are accessible without pointer hover
+The app SHALL expose play and remove actions for applicable queue rows without requiring pointer hover. Removable rows SHALL keep a stable remove control, and assistive technologies SHALL receive named actions for playing and removing a row.
+
+#### Scenario: VoiceOver plays a queued track
+- **WHEN** a VoiceOver user focuses a queued track and invokes its Play action
+- **THEN** the app starts that queued track using the same queue semantics as a mouse double-click
+
+#### Scenario: Keyboard or VoiceOver removes a manual queue item
+- **WHEN** a removable manual queue row is not pointer-hovered and the user invokes its remove control or named Remove action
+- **THEN** the item is removed from the manual queue

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct AppVersion: Comparable, CustomStringConvertible, Sendable {
@@ -56,11 +57,13 @@ struct GitHubReleaseAsset: Decodable, Equatable, Sendable {
     var name: String
     var browserDownloadURL: URL
     var size: Int?
+    var digest: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case name
         case browserDownloadURL = "browser_download_url"
         case size
+        case digest
     }
 }
 
@@ -178,6 +181,10 @@ enum AppUpdateError: Error, Equatable {
     case httpStatus(Int)
     case invalidReleaseVersion(String)
     case missingCompatibleAsset(String)
+    case invalidAssetDownloadURL
+    case missingAssetIntegrityMetadata(String)
+    case downloadedSizeMismatch(expected: Int64, actual: Int64)
+    case downloadedDigestMismatch
     case downloadFailed
     case extractionFailed(String)
     case notRunningFromAppBundle
@@ -199,6 +206,14 @@ enum AppUpdateError: Error, Equatable {
             return "最新版本号无法识别：\(version)"
         case .missingCompatibleAsset(let version):
             return "版本 \(version) 缺少可安装的 macOS arm64 更新包"
+        case .invalidAssetDownloadURL:
+            return "更新包地址不是受信任的 Crate GitHub Release 地址"
+        case .missingAssetIntegrityMetadata(let name):
+            return "更新包 \(name) 缺少有效的大小或 SHA-256 校验信息"
+        case .downloadedSizeMismatch:
+            return "更新包大小与 GitHub Release 记录不一致"
+        case .downloadedDigestMismatch:
+            return "更新包 SHA-256 校验失败"
         case .downloadFailed:
             return "更新包下载失败"
         case .extractionFailed(let detail):
@@ -266,6 +281,7 @@ struct AppUpdateService: Sendable {
         guard let asset = Self.compatibleAsset(in: release.assets, tagName: release.tagName, architecture: Self.currentArchitecture) else {
             throw AppUpdateError.missingCompatibleAsset(release.tagName)
         }
+        try Self.validateAssetMetadata(asset, tagName: release.tagName)
 
         return .available(AvailableAppUpdate(release: release, version: latestVersion, asset: asset))
     }
@@ -319,6 +335,7 @@ struct AppUpdateService: Sendable {
         try fileManager.createDirectory(at: extractDir, withIntermediateDirectories: true)
 
         try await download(update.asset, to: archiveURL, progress: progress)
+        try Self.validateDownloadedAsset(at: archiveURL, asset: update.asset)
 
         await stage("正在解压更新包...")
         try extractZip(at: archiveURL, to: extractDir)
@@ -352,6 +369,9 @@ struct AppUpdateService: Sendable {
         if let httpResponse = response as? HTTPURLResponse,
            !(200..<300).contains(httpResponse.statusCode) {
             throw AppUpdateError.httpStatus(httpResponse.statusCode)
+        }
+        guard response.url?.scheme?.lowercased() == "https" else {
+            throw AppUpdateError.invalidAssetDownloadURL
         }
 
         let responseLength = response.expectedContentLength > 0 ? response.expectedContentLength : nil
@@ -406,28 +426,77 @@ struct AppUpdateService: Sendable {
         tagName: String,
         architecture: String
     ) -> GitHubReleaseAsset? {
-        let lowerTag = tagName.lowercased()
-        let lowerArch = architecture.lowercased()
-        let scored = assets.compactMap { asset -> (score: Int, asset: GitHubReleaseAsset)? in
-            let lowerName = asset.name.lowercased()
-            guard lowerName.hasSuffix(".zip"),
-                  lowerName.contains("crate"),
-                  lowerName.contains("macos"),
-                  lowerName.contains(lowerArch) else { return nil }
+        let expectedName = "Crate-\(tagName)-macOS-\(architecture).zip"
+        return assets.first { $0.name == expectedName }
+    }
 
-            var score = 0
-            if lowerName.contains("crate-\(lowerTag)-macos-\(lowerArch).zip") { score += 8 }
-            if lowerName.contains(lowerTag) { score += 4 }
-            if lowerName.contains("arm64") { score += 2 }
-            if lowerName.contains("macos") { score += 1 }
-            return (score, asset)
+    static func validateAssetMetadata(_ asset: GitHubReleaseAsset, tagName: String) throws {
+        let expectedPath = "/\(owner)/\(repo)/releases/download/\(tagName)/\(asset.name)"
+        guard asset.browserDownloadURL.scheme?.lowercased() == "https",
+              asset.browserDownloadURL.host?.lowercased() == "github.com",
+              asset.browserDownloadURL.path == expectedPath,
+              asset.browserDownloadURL.query == nil,
+              asset.browserDownloadURL.fragment == nil else {
+            throw AppUpdateError.invalidAssetDownloadURL
         }
-        return scored.sorted { lhs, rhs in
-            if lhs.score == rhs.score {
-                return lhs.asset.name.localizedStandardCompare(rhs.asset.name) == .orderedAscending
-            }
-            return lhs.score < rhs.score
-        }.last?.asset
+        guard let size = asset.size, size > 0,
+              sha256Digest(from: asset.digest) != nil else {
+            throw AppUpdateError.missingAssetIntegrityMetadata(asset.name)
+        }
+    }
+
+    static func validateDownloadedAsset(at url: URL, asset: GitHubReleaseAsset) throws {
+        guard let expectedSize = asset.size, expectedSize > 0,
+              let expectedDigest = sha256Digest(from: asset.digest) else {
+            throw AppUpdateError.missingAssetIntegrityMetadata(asset.name)
+        }
+
+        let attributes: [FileAttributeKey: Any]
+        do {
+            attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        } catch {
+            throw AppUpdateError.downloadFailed
+        }
+        let actualSize = (attributes[.size] as? NSNumber)?.int64Value ?? -1
+        guard actualSize == Int64(expectedSize) else {
+            throw AppUpdateError.downloadedSizeMismatch(
+                expected: Int64(expectedSize),
+                actual: actualSize
+            )
+        }
+
+        let actualDigest: String
+        do {
+            actualDigest = try sha256Hex(ofFileAt: url)
+        } catch {
+            throw AppUpdateError.downloadFailed
+        }
+        guard actualDigest == expectedDigest else {
+            throw AppUpdateError.downloadedDigestMismatch
+        }
+    }
+
+    static func sha256Digest(from value: String?) -> String? {
+        guard let value else { return nil }
+        let prefix = "sha256:"
+        guard value.lowercased().hasPrefix(prefix) else { return nil }
+        let digest = String(value.dropFirst(prefix.count)).lowercased()
+        guard digest.count == 64, digest.allSatisfy(\.isHexDigit) else { return nil }
+        return digest
+    }
+
+    private static func sha256Hex(ofFileAt url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+
+        var hasher = SHA256()
+        while let data = try handle.read(upToCount: 1024 * 1024), !data.isEmpty {
+            hasher.update(data: data)
+        }
+        return hasher.finalize().map { byte in
+            let value = String(byte, radix: 16)
+            return value.count == 1 ? "0\(value)" : value
+        }.joined()
     }
 
     private func extractZip(at archiveURL: URL, to directoryURL: URL) throws {

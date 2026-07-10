@@ -89,6 +89,111 @@ final class AppUpdateServiceTests: XCTestCase {
         XCTAssertNil(selected)
     }
 
+    func testCompatibleAssetRejectsSimilarBackupName() throws {
+        let backup = GitHubReleaseAsset(
+            name: "Backup-Crate-v1.8-macOS-arm64.zip",
+            browserDownloadURL: try XCTUnwrap(URL(string: "https://github.com/FengLiHeng/Crate/releases/download/v1.8/Backup-Crate-v1.8-macOS-arm64.zip")),
+            size: 10,
+            digest: "sha256:\(String(repeating: "0", count: 64))"
+        )
+
+        XCTAssertNil(AppUpdateService.compatibleAsset(
+            in: [backup],
+            tagName: "v1.8",
+            architecture: "arm64"
+        ))
+    }
+
+    func testReleaseAssetDecodesGitHubSHA256Digest() throws {
+        let json = """
+        {
+          "name": "Crate-v1.8-macOS-arm64.zip",
+          "browser_download_url": "https://github.com/FengLiHeng/Crate/releases/download/v1.8/Crate-v1.8-macOS-arm64.zip",
+          "size": 5,
+          "digest": "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        }
+        """
+
+        let asset = try JSONDecoder().decode(GitHubReleaseAsset.self, from: Data(json.utf8))
+
+        XCTAssertEqual(asset.digest, "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
+    }
+
+    func testAssetMetadataRequiresExactTrustedGitHubReleaseURL() throws {
+        let asset = GitHubReleaseAsset(
+            name: "Crate-v1.8-macOS-arm64.zip",
+            browserDownloadURL: try XCTUnwrap(URL(string: "https://example.com/FengLiHeng/Crate/releases/download/v1.8/Crate-v1.8-macOS-arm64.zip")),
+            size: 5,
+            digest: "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        )
+
+        XCTAssertThrowsError(try AppUpdateService.validateAssetMetadata(asset, tagName: "v1.8")) { error in
+            XCTAssertEqual(error as? AppUpdateError, .invalidAssetDownloadURL)
+        }
+    }
+
+    func testAssetMetadataRequiresSizeAndSHA256Digest() throws {
+        let asset = GitHubReleaseAsset(
+            name: "Crate-v1.8-macOS-arm64.zip",
+            browserDownloadURL: try XCTUnwrap(URL(string: "https://github.com/FengLiHeng/Crate/releases/download/v1.8/Crate-v1.8-macOS-arm64.zip")),
+            size: nil,
+            digest: nil
+        )
+
+        XCTAssertThrowsError(try AppUpdateService.validateAssetMetadata(asset, tagName: "v1.8")) { error in
+            XCTAssertEqual(error as? AppUpdateError, .missingAssetIntegrityMetadata(asset.name))
+        }
+    }
+
+    func testDownloadedAssetAcceptsMatchingSizeAndSHA256() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let archiveURL = tempDir.appendingPathComponent("Crate-v1.8-macOS-arm64.zip")
+        try Data("hello".utf8).write(to: archiveURL)
+        let asset = GitHubReleaseAsset(
+            name: archiveURL.lastPathComponent,
+            browserDownloadURL: try XCTUnwrap(URL(string: "https://github.com/FengLiHeng/Crate/releases/download/v1.8/Crate-v1.8-macOS-arm64.zip")),
+            size: 5,
+            digest: "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        )
+
+        XCTAssertNoThrow(try AppUpdateService.validateDownloadedAsset(at: archiveURL, asset: asset))
+    }
+
+    func testDownloadedAssetRejectsSizeMismatch() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let archiveURL = tempDir.appendingPathComponent("Crate-v1.8-macOS-arm64.zip")
+        try Data("hello".utf8).write(to: archiveURL)
+        let asset = GitHubReleaseAsset(
+            name: archiveURL.lastPathComponent,
+            browserDownloadURL: try XCTUnwrap(URL(string: "https://github.com/FengLiHeng/Crate/releases/download/v1.8/Crate-v1.8-macOS-arm64.zip")),
+            size: 6,
+            digest: "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        )
+
+        XCTAssertThrowsError(try AppUpdateService.validateDownloadedAsset(at: archiveURL, asset: asset)) { error in
+            XCTAssertEqual(error as? AppUpdateError, .downloadedSizeMismatch(expected: 6, actual: 5))
+        }
+    }
+
+    func testDownloadedAssetRejectsDigestMismatch() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let archiveURL = tempDir.appendingPathComponent("Crate-v1.8-macOS-arm64.zip")
+        try Data("hello".utf8).write(to: archiveURL)
+        let asset = GitHubReleaseAsset(
+            name: archiveURL.lastPathComponent,
+            browserDownloadURL: try XCTUnwrap(URL(string: "https://github.com/FengLiHeng/Crate/releases/download/v1.8/Crate-v1.8-macOS-arm64.zip")),
+            size: 5,
+            digest: "sha256:\(String(repeating: "0", count: 64))"
+        )
+
+        XCTAssertThrowsError(try AppUpdateService.validateDownloadedAsset(at: archiveURL, asset: asset)) { error in
+            XCTAssertEqual(error as? AppUpdateError, .downloadedDigestMismatch)
+        }
+    }
+
     func testInstallationScriptRestoresPreviousAppWhenCopyLeavesPartialTarget() throws {
         let tempDir = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: tempDir) }

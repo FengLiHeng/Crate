@@ -128,10 +128,11 @@ private struct QueueRow: View {
             Spacer(minLength: 0)
             if isCurrent {
                 EqBars(paused: !app.player.isPlaying, accent: app.tokens.accent)
-            } else if removable && hovering {
+            } else if removable {
                 IconButton(systemName: "xmark", size: 10, side: 22, help: "从队列移除") {
                     onRemove?()
                 }
+                .opacity(hovering ? 1 : 0.45)
                 .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.92)))
             }
         }
@@ -145,7 +146,32 @@ private struct QueueRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .gesture(TapGesture(count: 2).onEnded { onPlay?() })
+        .modifier(QueueRowAccessibilityActions(onPlay: onPlay, onRemove: onRemove))
         .animation(MotionTokens.feedback, value: hovering)
         .animation(MotionTokens.feedback, value: isCurrent)
+    }
+}
+
+private struct QueueRowAccessibilityActions: ViewModifier {
+    var onPlay: (() -> Void)?
+    var onRemove: (() -> Void)?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let onPlay, let onRemove {
+            content
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(named: Text("播放")) { onPlay() }
+                .accessibilityAction(named: Text("从队列移除")) { onRemove() }
+        } else if let onPlay {
+            content
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(named: Text("播放")) { onPlay() }
+        } else if let onRemove {
+            content
+                .accessibilityAction(named: Text("从队列移除")) { onRemove() }
+        } else {
+            content
+        }
     }
 }

@@ -4,8 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SWIFT_BUILD_FLAGS_ARRAY=()
-APP_VERSION="${APP_VERSION:-2.0.0}"
-APP_BUILD="${APP_BUILD:-10}"
+APP_VERSION="${APP_VERSION:-2.1.0}"
+APP_BUILD="${APP_BUILD:-11}"
 if [[ -n "${SWIFT_BUILD_FLAGS:-}" ]]; then
     # 允许受限环境传入 --disable-sandbox 等 SwiftPM 构建参数；默认不改变本地打包行为。
     SWIFT_BUILD_FLAGS_ARRAY=(${SWIFT_BUILD_FLAGS})
@@ -28,6 +28,9 @@ if [[ -d "$RESOURCE_BUNDLE" ]]; then
     cp -R "$RESOURCE_BUNDLE" "$APP/Contents/Resources/"
 fi
 cp src/Assets.xcassets/AlbumPlaceholder.imageset/album-placeholder.png "$APP/Contents/Resources/album-placeholder.png"
+# SwiftPM 会原样复制资源目录，发布 bundle 中不应包含 Finder 元数据。
+find "$APP" -name '.DS_Store' -delete
+find "$APP" -name '._*' -delete
 
 rm -rf "$ICONSET"
 mkdir -p "$ICONSET"
