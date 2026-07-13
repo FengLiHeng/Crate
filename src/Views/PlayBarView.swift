@@ -82,7 +82,8 @@ struct PlayBarView: View {
             HStack(spacing: 14) {
                 IconButton(
                     systemName: playbackModeIcon(player), size: 14, side: 30,
-                    active: playbackModeActive(player), help: playbackModeHelp(player)
+                    active: playbackModeActive(player), showsActiveBackground: false,
+                    help: playbackModeHelp(player)
                 ) { player.cyclePlaybackMode() }
 
                 IconButton(

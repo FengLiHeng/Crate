@@ -349,6 +349,7 @@ struct IconButton: View {
     var size: CGFloat = 16
     var side: CGFloat = 28
     var active: Bool = false
+    var showsActiveBackground: Bool = true
     var disabled: Bool = false
     var help: String = ""
     var action: () -> Void
@@ -370,7 +371,7 @@ struct IconButton: View {
                 .frame(width: side, height: side)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(active ? app.tokens.accentSoft : (hovering ? app.tokens.hover : .clear))
+                        .fill(active && showsActiveBackground ? app.tokens.accentSoft : (hovering ? app.tokens.hover : .clear))
                 )
                 .scaleEffect(pressed ? 0.94 : 1)
                 .animation(MotionTokens.feedback, value: hovering)
