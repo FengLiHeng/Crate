@@ -266,6 +266,22 @@ final class PlayerStore {
         startPlaying(id: song.id)
     }
 
+    /// 从搜索结果立即插播：保留既有待播顺序，并避免目标歌曲在后续重复出现。
+    func playSearchResult(_ song: Song, fallbackContext: [Song]) {
+        skipVisited.removeAll()
+        manualQueue.removeAll { $0 == song.id }
+
+        if ctx.ids.isEmpty {
+            let ids = Self.uniqueIds(fallbackContext.map(\.id)).filter { $0 != song.id }
+            ctx = Context(ids: ids, originalIds: ids, pos: -1)
+        } else {
+            removeFromUpcomingContext(song.id)
+        }
+
+        isManual = true
+        startPlaying(id: song.id)
+    }
+
     // MARK: - 下一首 / 上一首（next / prev）
 
     func next() {

@@ -228,6 +228,75 @@ final class PlayerStoreTests: XCTestCase {
         XCTAssertFalse(store.isPlaying)
         XCTAssertTrue(toasts.contains("没有可播放的曲目"))
     }
+
+    func testSearchResultPreservesExistingQueueOrderAndRemovesDuplicate() {
+        let first = Song(id: "first", title: "First", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let second = Song(id: "second", title: "Second", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let searched = Song(id: "searched", title: "Searched", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let manual = Song(id: "manual", title: "Manual", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let songs = Dictionary(uniqueKeysWithValues: [first, second, searched, manual].map { ($0.id, $0) })
+        let store = PlayerStore()
+        store.songProvider = { songs[$0] }
+
+        store.playFrom([first, second, searched], index: 0)
+        store.playNextSong(manual)
+        store.playSearchResult(searched, fallbackContext: [first, second, searched])
+
+        XCTAssertEqual(store.currentId, searched.id)
+        XCTAssertTrue(store.isManual)
+        XCTAssertEqual(store.manualQueue, [manual.id])
+        XCTAssertEqual(store.ctx.ids, [first.id, second.id])
+        XCTAssertEqual(store.upcomingIds, [second.id])
+
+        store.next()
+        XCTAssertEqual(store.currentId, manual.id)
+        XCTAssertTrue(store.isManual)
+
+        store.next()
+        XCTAssertEqual(store.currentId, second.id)
+        XCTAssertFalse(store.isManual)
+    }
+
+    func testFirstSearchResultPlaybackKeepsOriginalOrderWithoutSelectedSong() {
+        let first = Song(id: "first", title: "First", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let second = Song(id: "second", title: "Second", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let searched = Song(id: "searched", title: "Searched", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let fourth = Song(id: "fourth", title: "Fourth", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let songs = Dictionary(uniqueKeysWithValues: [first, second, searched, fourth].map { ($0.id, $0) })
+        let store = PlayerStore()
+        store.songProvider = { songs[$0] }
+
+        store.playSearchResult(searched, fallbackContext: [first, second, searched, fourth])
+
+        XCTAssertEqual(store.currentId, searched.id)
+        XCTAssertTrue(store.isManual)
+        XCTAssertEqual(store.ctx.pos, -1)
+        XCTAssertEqual(store.upcomingIds, [first.id, second.id, fourth.id])
+
+        store.next()
+        XCTAssertEqual(store.currentId, first.id)
+        XCTAssertFalse(store.isManual)
+    }
+
+    func testRegularPlaybackStillRotatesAndSwitchingGroupsReplacesContext() {
+        let a1 = Song(id: "a1", title: "A1", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let a2 = Song(id: "a2", title: "A2", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let a3 = Song(id: "a3", title: "A3", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let b1 = Song(id: "b1", title: "B1", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let b2 = Song(id: "b2", title: "B2", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let b3 = Song(id: "b3", title: "B3", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let songs = Dictionary(uniqueKeysWithValues: [a1, a2, a3, b1, b2, b3].map { ($0.id, $0) })
+        let store = PlayerStore()
+        store.songProvider = { songs[$0] }
+
+        store.playFrom([a1, a2, a3], index: 1, rotateFromIndex: true)
+        XCTAssertEqual(store.ctx.ids, [a2.id, a3.id, a1.id])
+
+        store.playFrom([b1, b2, b3], index: 1, rotateFromIndex: true)
+        XCTAssertEqual(store.currentId, b2.id)
+        XCTAssertEqual(store.ctx.ids, [b2.id, b3.id, b1.id])
+        XCTAssertTrue(store.manualQueue.isEmpty)
+    }
 }
 
 @MainActor

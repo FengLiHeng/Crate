@@ -22,6 +22,7 @@ struct SongTableView: View {
     var body: some View {
         let songs = app.viewSongs
         let playbackSongs = app.viewPlaybackSongs
+        let isSearching = !app.search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         GeometryReader { geo in
             let cols = ColumnWidths(total: geo.size.width - 32)
             if songs.isEmpty {
@@ -35,7 +36,12 @@ struct SongTableView: View {
                 VStack(spacing: 0) {
                     TableHeader(cols: cols)
                         .padding(.horizontal, 16)
-                    NativeSongTableView(songs: songs, playbackSongs: playbackSongs, cols: cols)
+                    NativeSongTableView(
+                        songs: songs,
+                        playbackSongs: playbackSongs,
+                        isSearching: isSearching,
+                        cols: cols
+                    )
                         .padding(.horizontal, 16)
                         .padding(.bottom, 16)
                 }
@@ -53,6 +59,7 @@ struct SongTableView: View {
 private struct NativeSongTableView: NSViewRepresentable {
     var songs: [Song]
     var playbackSongs: [Song]
+    var isSearching: Bool
     var cols: ColumnWidths
 
     @Environment(AppState.self) private var app
@@ -101,6 +108,7 @@ private struct NativeSongTableView: NSViewRepresentable {
             app: app,
             songs: songs,
             playbackSongs: playbackSongs,
+            isSearching: isSearching,
             cols: cols
         )
     }
@@ -115,14 +123,22 @@ private struct NativeSongTableView: NSViewRepresentable {
         private var app: AppState?
         private var songs: [Song] = []
         private var playbackSongs: [Song] = []
+        private var isSearching = false
         private var cols = ColumnWidths(total: 0)
         private var songIds: [String] = []
         private var lastColumnWidth: CGFloat = 0
 
-        func update(app: AppState, songs: [Song], playbackSongs: [Song], cols: ColumnWidths) {
+        func update(
+            app: AppState,
+            songs: [Song],
+            playbackSongs: [Song],
+            isSearching: Bool,
+            cols: ColumnWidths
+        ) {
             self.app = app
             self.songs = songs
             self.playbackSongs = playbackSongs
+            self.isSearching = isSearching
             self.cols = cols
 
             let ids = songs.map(\.id)
@@ -197,6 +213,10 @@ private struct NativeSongTableView: NSViewRepresentable {
         }
 
         private func play(song: Song, app: AppState) {
+            if isSearching {
+                app.player.playSearchResult(song, fallbackContext: playbackSongs)
+                return
+            }
             let playbackIndex = playbackSongs.firstIndex { $0.id == song.id } ?? 0
             app.player.playFrom(playbackSongs, index: playbackIndex, rotateFromIndex: true)
         }
