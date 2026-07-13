@@ -224,7 +224,7 @@ private struct FavoriteButton: View {
             .frame(width: 30, height: 30)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(isFavorite ? app.tokens.accentSoft : (hovering ? app.tokens.hover : .clear))
+                    .fill(hovering ? app.tokens.hover : .clear)
             )
             .scaleEffect(pressed ? 0.94 : 1)
             .animation(MotionTokens.feedback, value: isFavorite)
