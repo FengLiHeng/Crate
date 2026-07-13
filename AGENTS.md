@@ -34,6 +34,19 @@
 
 提交信息保持简洁，描述一个逻辑变更。历史中既有 `feat:` 前缀，也有祈使句式，例如 `feat: 本地音乐播放器...`、`Add music import menu`。PR 应包含变更摘要、验证步骤、关联的 OpenSpec change；可见 UI 变更应附截图或录屏。
 
+## GitHub Release 更新说明
+
+GitHub Release 的更新说明面向最终用户，目标是让用户快速理解本次版本带来的体验改进。保持简洁、使用用户语言，不写开发过程、技术实现、提交信息、分支信息、构建/打包过程、校验结果或单元测试信息。
+
+后续创建 tag 和 GitHub Release 时，更新说明统一使用以下模板；仅保留实际发生的用户可感知条目：
+
+```md
+## 更新
+
+- <新增的用户能力或体验改进>
+- <修复的用户可见问题>
+```
+
 ## OpenSpec Workflow
 
 行为变更应先创建或更新 OpenSpec change，再实现代码。实现完成后，同步 delta specs 到 `openspec/specs/`，准确勾选 `tasks.md`，并将完成的 change 归档到 `openspec/changes/archive/YYYY-MM-DD-<change-name>/`。
