@@ -118,21 +118,39 @@ struct RootView: View {
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         let group = DispatchGroup()
-        var urls: [URL] = []
-        let lock = NSLock()
+        let collector = DroppedURLCollector()
         for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
             group.enter()
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
                 if let url {
-                    lock.lock(); urls.append(url); lock.unlock()
+                    collector.append(url)
                 }
                 group.leave()
             }
         }
         group.notify(queue: .main) {
-            app.importFiles(urls)
+            Task { @MainActor in
+                app.importFiles(collector.snapshot())
+            }
         }
         return true
+    }
+}
+
+private final class DroppedURLCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var urls: [URL] = []
+
+    func append(_ url: URL) {
+        lock.lock()
+        urls.append(url)
+        lock.unlock()
+    }
+
+    func snapshot() -> [URL] {
+        lock.lock()
+        defer { lock.unlock() }
+        return urls
     }
 }
 

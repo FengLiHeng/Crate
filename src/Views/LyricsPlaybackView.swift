@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct LyricsPlaybackView: View {
     var page: LyricsPageState
@@ -6,6 +7,9 @@ struct LyricsPlaybackView: View {
     @Environment(AppState.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var lastScrolledLineId: Int?
+    @State private var followsCurrentLine = true
+    @State private var scrollMonitor: Any?
+    @ScaledMetric(relativeTo: .title) private var songTitleSize: CGFloat = 25
 
     private let lyricsViewportTopPadding: CGFloat = 42
 
@@ -75,7 +79,7 @@ struct LyricsPlaybackView: View {
                     .animation(MotionTokens.lyric(reduceMotion: reduceMotion), value: app.player.isPlaying)
                 VStack(alignment: .leading, spacing: 7) {
                     Text(song.title)
-                        .font(.system(size: 25, weight: .bold))
+                        .font(.system(size: songTitleSize, weight: .bold))
                         .foregroundStyle(app.tokens.text)
                         .lineLimit(3)
                     Text(app.artistName(for: song))
@@ -101,27 +105,70 @@ struct LyricsPlaybackView: View {
 
     private var lyricsPane: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    Color.clear.frame(height: 120)
-                    ForEach(Array(page.lyrics.lines.enumerated()), id: \.element.id) { index, line in
-                        LyricLineView(line: line, active: index == currentLineIndex)
-                            .id(line.id)
+            ZStack(alignment: .bottomTrailing) {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        Color.clear.frame(height: 120)
+                        ForEach(Array(page.lyrics.lines.enumerated()), id: \.element.id) { index, line in
+                            LyricLineView(line: line, active: index == currentLineIndex)
+                                .id(line.id)
+                        }
+                        Color.clear.frame(height: 150)
                     }
-                    Color.clear.frame(height: 150)
+                    .padding(.horizontal, 54)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.horizontal, 54)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, lyricsViewportTopPadding)
+
+                if !followsCurrentLine {
+                    Button {
+                        followsCurrentLine = true
+                        lastScrolledLineId = nil
+                        scrollToCurrentLine(proxy: proxy, animated: true)
+                    } label: {
+                        Label("回到当前歌词", systemImage: "scope")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .padding(24)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
             }
-            .padding(.top, lyricsViewportTopPadding)
             .onAppear {
+                followsCurrentLine = true
+                installScrollMonitor()
+                scrollToCurrentLine(proxy: proxy, animated: false)
+            }
+            .onDisappear { removeScrollMonitor() }
+            .onChange(of: page.songId) { _, _ in
+                followsCurrentLine = true
+                lastScrolledLineId = nil
                 scrollToCurrentLine(proxy: proxy, animated: false)
             }
             .onChange(of: currentLineId) { _, _ in
+                guard followsCurrentLine else { return }
                 scrollToCurrentLine(proxy: proxy, animated: true)
             }
             .animation(MotionTokens.lyric(reduceMotion: reduceMotion), value: currentLineId)
+            .animation(MotionTokens.feedback, value: followsCurrentLine)
         }
+    }
+
+    private func installScrollMonitor() {
+        guard scrollMonitor == nil else { return }
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            if abs(event.scrollingDeltaY) > 0.1 {
+                followsCurrentLine = false
+            }
+            return event
+        }
+    }
+
+    private func removeScrollMonitor() {
+        if let scrollMonitor {
+            NSEvent.removeMonitor(scrollMonitor)
+        }
+        scrollMonitor = nil
     }
 
     private func scrollToCurrentLine(proxy: ScrollViewProxy, animated: Bool) {

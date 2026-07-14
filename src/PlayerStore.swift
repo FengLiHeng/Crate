@@ -1,6 +1,25 @@
 import Foundation
 import Observation
 
+private final class PlaybackEngineTransfer: @unchecked Sendable {
+    let engine: PlaybackEngine?
+
+    init(_ engine: PlaybackEngine?) {
+        self.engine = engine
+    }
+}
+
+private actor PlaybackEngineBuilder {
+    func make(
+        url: URL,
+        volume: Double,
+        factory: @Sendable (URL, Double) throws -> PlaybackEngine
+    ) -> PlaybackEngineTransfer {
+        guard !Task.isCancelled else { return PlaybackEngineTransfer(nil) }
+        return PlaybackEngineTransfer(try? factory(url, volume))
+    }
+}
+
 /// 跳过失效曲目时的寻找方向（design.md D3）
 enum SkipDirection {
     case forward   // 下一首 / 自动切歌 / 从列表播放：向后找可用曲目
@@ -9,15 +28,16 @@ enum SkipDirection {
 
 // 播放状态机（design.md D4），语义严格移植 docs/设计材料/player-app.jsx：
 // 播放上下文 ctx + 插播队列 manualQueue，插播结束后回到上下文继续。
+@MainActor
 @Observable
 final class PlayerStore {
-    struct Context: Codable {
+    struct Context: Codable, Sendable {
         var ids: [String] = []
         var originalIds: [String] = []
         var pos: Int = -1
     }
 
-    private struct PlaybackMemory: Codable {
+    private struct PlaybackMemory: Codable, Sendable {
         var currentId: String
         var progress: Double
         var isManual: Bool
@@ -31,6 +51,7 @@ final class PlayerStore {
     /// 当前曲目是否来自插播（不占用上下文位置）
     var isManual = false
     var isPlaying = false
+    private(set) var isLoading = false
     var progress: Double = 0
     var volume: Double {
         didSet {
@@ -44,16 +65,18 @@ final class PlayerStore {
     var ctx = Context()
 
     // 由 AppState 注入
-    @ObservationIgnored var songProvider: (String) -> Song? = { _ in nil }
-    @ObservationIgnored var onToast: (String) -> Void = { _ in }
+    @ObservationIgnored var songProvider: @MainActor (String) -> Song? = { _ in nil }
+    @ObservationIgnored var onToast: @MainActor (String) -> Void = { _ in }
     /// 播放撞到文件缺失/无法解码时回调，供 AppState 即时标记失效（design.md D2）
-    @ObservationIgnored var onMissing: (String) -> Void = { _ in }
-    @ObservationIgnored var engineFactory: (URL, Double) throws -> PlaybackEngine = { url, volume in
+    @ObservationIgnored var onMissing: @MainActor (String) -> Void = { _ in }
+    @ObservationIgnored var engineFactory: @Sendable (URL, Double) throws -> PlaybackEngine = { url, volume in
         try FilePlaybackEngine(url: url, volume: volume)
     }
-    @ObservationIgnored var engineBuildQueue: DispatchQueue = .global(qos: .userInitiated)
 
     @ObservationIgnored private var engine: PlaybackEngine?
+    @ObservationIgnored private var engineBuildTask: Task<Void, Never>?
+    @ObservationIgnored private var engineWorkerTask: Task<PlaybackEngineTransfer, Never>?
+    @ObservationIgnored private let engineBuilder = PlaybackEngineBuilder()
     @ObservationIgnored private var progressTimer: Timer?
     @ObservationIgnored private var playbackMemoryURL: URL?
     @ObservationIgnored private let playbackMemoryQueue = DispatchQueue(label: "com.crate.playback-memory", qos: .utility)
@@ -115,6 +138,7 @@ final class PlayerStore {
         }
 
         playToken += 1
+        cancelEngineBuild()
         engine?.stop()
         engine = nil
         stopProgressTimer()
@@ -124,6 +148,7 @@ final class PlayerStore {
         progress = clampedProgress(memory.progress, for: song)
         isManual = memory.isManual
         isPlaying = false
+        isLoading = false
         manualQueue = Self.uniqueIds(memory.manualQueue.filter { availableIds.contains($0) && $0 != memory.currentId })
         ctx = restoredContext
         shuffle = memory.shuffle
@@ -193,7 +218,7 @@ final class PlayerStore {
         }
     }
 
-    private static func writePlaybackMemory(_ memory: PlaybackMemory?, to url: URL) {
+    nonisolated private static func writePlaybackMemory(_ memory: PlaybackMemory?, to url: URL) {
         let directory = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         guard let memory else {
@@ -208,11 +233,13 @@ final class PlayerStore {
 
     private func resetRestoredPlaybackState() {
         playToken += 1
+        cancelEngineBuild()
         engine?.stop()
         engine = nil
         currentId = nil
         isManual = false
         isPlaying = false
+        isLoading = false
         progress = 0
         manualQueue = []
         ctx = Context()
@@ -361,7 +388,7 @@ final class PlayerStore {
     // MARK: - 播放/暂停/进度/音量
 
     func togglePlay() {
-        guard currentId != nil else { return }
+        guard currentId != nil, !isLoading else { return }
         if isPlaying {
             engine?.pause()
             isPlaying = false
@@ -544,8 +571,10 @@ final class PlayerStore {
 
     private func startPlaying(id: String, startAt: Double = 0, skipOnMissing: SkipDirection = .forward) {
         guard let song = songProvider(id) else { return }
+        cancelEngineBuild()
         engine?.stop()
         engine = nil
+        isLoading = false
         progress = clampedProgress(startAt, for: song)
         currentId = id
         playToken += 1
@@ -560,18 +589,25 @@ final class PlayerStore {
             }
             // 构造解码引擎放到后台，避免大文件/网络卷阻塞 UI（design.md D5）
             isPlaying = false
+            isLoading = true
             let vol = volume
             let factory = engineFactory
-            engineBuildQueue.async { [weak self] in
-                let made = try? factory(url, vol)
-                DispatchQueue.main.async {
-                    guard let self, self.playToken == token else { return } // 用户已切歌，作废
-                    guard let e = made else {
-                        self.handleUnplayable(song: song, direction: skipOnMissing)
-                        return
-                    }
-                    self.attachAndPlay(e, token: token, failureSong: song, skipOnFailure: skipOnMissing)
+            let builder = engineBuilder
+            let worker = Task.detached(priority: .userInitiated) {
+                await builder.make(url: url, volume: vol, factory: factory)
+            }
+            engineWorkerTask = worker
+            engineBuildTask = Task { [weak self] in
+                let made = await worker.value.engine
+                guard !Task.isCancelled, let self, self.playToken == token else { return }
+                self.engineBuildTask = nil
+                self.engineWorkerTask = nil
+                self.isLoading = false
+                guard let made else {
+                    self.handleUnplayable(song: song, direction: skipOnMissing)
+                    return
                 }
+                self.attachAndPlay(made, token: token, failureSong: song, skipOnFailure: skipOnMissing)
             }
         } else {
             // 示例曲目：模拟进度，无 IO，直接接管
@@ -586,16 +622,21 @@ final class PlayerStore {
         failureSong: Song? = nil,
         skipOnFailure: SkipDirection = .forward
     ) {
+        isLoading = false
         skipVisited.removeAll()
         backwardFallback = nil
         engine = e
         e.onFinished = { [weak self] in
-            guard let self, self.playToken == token else { return }
-            self.handleFinished()
+            Task { @MainActor [weak self] in
+                guard let self, self.playToken == token else { return }
+                self.handleFinished()
+            }
         }
         e.onFailed = { [weak self] in
-            guard let self, self.playToken == token, let failureSong else { return }
-            self.handleUnplayable(song: failureSong, direction: skipOnFailure)
+            Task { @MainActor [weak self] in
+                guard let self, self.playToken == token, let failureSong else { return }
+                self.handleUnplayable(song: failureSong, direction: skipOnFailure)
+            }
         }
         e.seek(to: progress)
         e.play()
@@ -606,6 +647,7 @@ final class PlayerStore {
 
     /// 文件缺失或无法解码：标记失效、提示并按方向继续寻找可用曲目；绕回一圈则停止（design.md D3/D4）
     private func handleUnplayable(song: Song, direction: SkipDirection) {
+        isLoading = false
         onMissing(song.id)
         isPlaying = false
         if skipVisited.contains(song.id) {
@@ -645,11 +687,13 @@ final class PlayerStore {
 
     func stopPlayback() {
         playToken += 1
+        cancelEngineBuild()
         engine?.stop()
         engine = nil
         currentId = nil
         isManual = false
         isPlaying = false
+        isLoading = false
         progress = 0
         backwardFallback = nil
         stopProgressTimer()
@@ -665,9 +709,11 @@ final class PlayerStore {
     private func startProgressTimer() {
         stopProgressTimer()
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self, self.isPlaying, let engine = self.engine else { return }
-            self.progress = engine.currentTime
-            self.savePlaybackMemorySoon()
+            Task { @MainActor [weak self] in
+                guard let self, self.isPlaying, let engine = self.engine else { return }
+                self.progress = engine.currentTime
+                self.savePlaybackMemorySoon()
+            }
         }
         // .common 模式：滚动/拖动（eventTracking）期间进度照常刷新
         RunLoop.main.add(timer, forMode: .common)
@@ -677,5 +723,13 @@ final class PlayerStore {
     private func stopProgressTimer() {
         progressTimer?.invalidate()
         progressTimer = nil
+    }
+
+    private func cancelEngineBuild() {
+        engineBuildTask?.cancel()
+        engineWorkerTask?.cancel()
+        engineBuildTask = nil
+        engineWorkerTask = nil
+        isLoading = false
     }
 }

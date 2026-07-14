@@ -1,5 +1,6 @@
 import AppKit
 
+@MainActor
 final class CrateAppDelegate: NSObject, NSApplicationDelegate {
     private weak var appState: AppState?
 
@@ -40,10 +41,8 @@ final class CrateAppDelegate: NSObject, NSApplicationDelegate {
         return item
     }
 
-    private func performOnMain(_ action: @escaping (AppState) -> Void) {
-        DispatchQueue.main.async { [weak self] in
-            guard let appState = self?.appState else { return }
-            action(appState)
-        }
+    private func performOnMain(_ action: (AppState) -> Void) {
+        guard let appState else { return }
+        action(appState)
     }
 }

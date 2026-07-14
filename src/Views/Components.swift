@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 
+@MainActor
 private final class ArtworkImageCache {
     static let shared = ArtworkImageCache()
 
@@ -22,6 +23,7 @@ private final class ArtworkImageCache {
     }
 }
 
+@MainActor
 private enum AlbumPlaceholderImage {
     static let image: NSImage? = {
         if let image = NSImage(named: NSImage.Name("AlbumPlaceholder")) {
@@ -242,6 +244,7 @@ struct UISlider: View {
     var label: String = "滑杆"
     var value: Double
     var max: Double = 1
+    var accessibilityValueText: String?
     var onChange: (Double) -> Void
 
     @Environment(AppState.self) private var app
@@ -274,7 +277,7 @@ struct UISlider: View {
                 Capsule().fill(app.tokens.ctrl).frame(height: 4)
                 // 已填充
                 Capsule().fill(app.tokens.accent)
-                    .frame(width: Swift.max(4, pct * w), height: 4)
+                    .frame(width: pct > 0 ? Swift.max(4, pct * w) : 0, height: 4)
                     .animation(MotionTokens.progress, value: pct)
                 // 滑块（hover 时出现）
                 Circle()
@@ -300,7 +303,7 @@ struct UISlider: View {
         .onHover { hovering = $0 }
         .accessibilityElement()
         .accessibilityLabel(Text(label))
-        .accessibilityValue(Text(accessibilityValue))
+        .accessibilityValue(Text(accessibilityValueText ?? accessibilityValue))
         .accessibilityAdjustableAction { direction in
             adjustAccessibilityValue(direction)
         }

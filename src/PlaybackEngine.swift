@@ -4,9 +4,9 @@ import AVFoundation
 // 播放引擎协议（design.md D3）：
 // 真实文件走 FilePlaybackEngine，无文件的示例曲目走 SimulatedEngine，
 // PlayerStore 只面向协议，两条路径行为一致。
-protocol PlaybackEngine: AnyObject {
-    var onFinished: (() -> Void)? { get set }
-    var onFailed: (() -> Void)? { get set }
+protocol PlaybackEngine: AnyObject, Sendable {
+    var onFinished: (@Sendable () -> Void)? { get set }
+    var onFailed: (@Sendable () -> Void)? { get set }
     var currentTime: Double { get }
     func play()
     func pause()
@@ -17,9 +17,9 @@ protocol PlaybackEngine: AnyObject {
 
 // MARK: - 模拟引擎（示例曲目，按真实时间推进进度，无音频输出）
 
-final class SimulatedEngine: PlaybackEngine {
-    var onFinished: (() -> Void)?
-    var onFailed: (() -> Void)?
+final class SimulatedEngine: PlaybackEngine, @unchecked Sendable {
+    var onFinished: (@Sendable () -> Void)?
+    var onFailed: (@Sendable () -> Void)?
 
     private let duration: Double
     private var elapsed: Double = 0
@@ -80,12 +80,12 @@ final class SimulatedEngine: PlaybackEngine {
 
 // MARK: - 真实播放引擎（AVFoundation）
 
-final class FilePlaybackEngine: PlaybackEngine {
-    var onFinished: (() -> Void)? {
+final class FilePlaybackEngine: PlaybackEngine, @unchecked Sendable {
+    var onFinished: (@Sendable () -> Void)? {
         get { engine.onFinished }
         set { engine.onFinished = newValue }
     }
-    var onFailed: (() -> Void)? {
+    var onFailed: (@Sendable () -> Void)? {
         get { engine.onFailed }
         set { engine.onFailed = newValue }
     }
@@ -109,9 +109,9 @@ final class FilePlaybackEngine: PlaybackEngine {
     func stop() { engine.stop() }
 }
 
-final class AVAudioPlayerEngine: NSObject, PlaybackEngine, AVAudioPlayerDelegate {
-    var onFinished: (() -> Void)?
-    var onFailed: (() -> Void)?
+final class AVAudioPlayerEngine: NSObject, PlaybackEngine, AVAudioPlayerDelegate, @unchecked Sendable {
+    var onFinished: (@Sendable () -> Void)?
+    var onFailed: (@Sendable () -> Void)?
 
     private let player: AVAudioPlayer
 
@@ -153,9 +153,9 @@ final class AVAudioPlayerEngine: NSObject, PlaybackEngine, AVAudioPlayerDelegate
     }
 }
 
-final class AVPlayerPlaybackEngine: PlaybackEngine {
-    var onFinished: (() -> Void)?
-    var onFailed: (() -> Void)? {
+final class AVPlayerPlaybackEngine: PlaybackEngine, @unchecked Sendable {
+    var onFinished: (@Sendable () -> Void)?
+    var onFailed: (@Sendable () -> Void)? {
         didSet {
             if pendingFailure {
                 notifyFailed()

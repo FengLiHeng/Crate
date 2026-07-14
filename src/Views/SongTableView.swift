@@ -26,11 +26,7 @@ struct SongTableView: View {
         GeometryReader { geo in
             let cols = ColumnWidths(total: geo.size.width - 32)
             if songs.isEmpty {
-                EmptyHint(
-                    text: app.search.isEmpty
-                        ? emptyText
-                        : "没有与「\(app.search)」匹配的结果"
-                )
+                LibraryEmptyState()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 0) {
@@ -49,10 +45,42 @@ struct SongTableView: View {
         }
     }
 
-    private var emptyText: String {
-        app.viewPlaylist == nil
-            ? "资料库是空的，拖入音频文件或点击 + 导入"
-            : "该分组暂无歌曲\n在歌曲上右键选择「添加到分组」"
+}
+
+private struct LibraryEmptyState: View {
+    @Environment(AppState.self) private var app
+
+    private var query: String {
+        app.search.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        if !query.isEmpty {
+            ContentUnavailableView {
+                Label("未找到歌曲", systemImage: "magnifyingglass")
+            } description: {
+                Text("没有与「\(query)」匹配的结果")
+            } actions: {
+                Button("清除搜索") { app.search = "" }
+            }
+        } else if app.viewPlaylist == nil {
+            ContentUnavailableView {
+                Label("资料库是空的", systemImage: "music.note.list")
+            } description: {
+                Text("拖入音频文件，或从本机选择音乐开始聆听。")
+            } actions: {
+                Button("导入音乐") { app.importViaPanel() }
+                    .disabled(app.importPhase.isImporting)
+            }
+        } else {
+            ContentUnavailableView {
+                Label("分组暂无歌曲", systemImage: "music.note")
+            } description: {
+                Text("在资料库的歌曲菜单中选择「添加到分组」。")
+            } actions: {
+                Button("返回资料库") { app.view = .library }
+            }
+        }
     }
 }
 
@@ -113,6 +141,7 @@ private struct NativeSongTableView: NSViewRepresentable {
         )
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         static let columnIdentifier = NSUserInterfaceItemIdentifier("song-row")
         private let cellIdentifier = NSUserInterfaceItemIdentifier("song-row-cell")
@@ -223,6 +252,7 @@ private struct NativeSongTableView: NSViewRepresentable {
     }
 }
 
+@MainActor
 private final class SongTableScrollView: NSScrollView {
     weak var tableView: NSTableView?
 
@@ -233,6 +263,7 @@ private final class SongTableScrollView: NSScrollView {
     }
 }
 
+@MainActor
 private final class SongHostingCell: NSTableCellView {
     private var hostingView: NSHostingView<AnyView>?
 
@@ -453,7 +484,7 @@ struct EmptyHint: View {
     var body: some View {
         VStack {
             Text(text)
-                .font(.system(size: small ? 12.5 : 13.5))
+                .font(small ? .caption : .body)
                 .foregroundStyle(app.tokens.text3)
                 .multilineTextAlignment(.center)
                 .lineSpacing(6)

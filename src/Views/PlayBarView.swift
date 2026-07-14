@@ -55,11 +55,11 @@ struct PlayBarView: View {
                     .transition(songTransition)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.title)
-                        .font(.system(size: 13.5, weight: .semibold))
+                        .font(.headline)
                         .foregroundStyle(app.tokens.text)
                         .lineLimit(1)
                     Text(app.artistName(for: song))
-                        .font(.system(size: 12))
+                        .font(.subheadline)
                         .foregroundStyle(app.tokens.text2)
                         .lineLimit(1)
                 }
@@ -69,7 +69,7 @@ struct PlayBarView: View {
             } else {
                 CoverView(size: 48, radius: 7)
                 Text("未在播放")
-                    .font(.system(size: 12))
+                    .font(.subheadline)
                     .foregroundStyle(app.tokens.text2)
             }
         }
@@ -104,9 +104,18 @@ struct PlayBarView: View {
             HStack(spacing: 10) {
                 Text(song != nil ? formatTime(player.progress) : "-:--")
                     .frame(width: 40, alignment: .leading)
-                UISlider(label: "播放进度", value: song != nil ? player.progress : 0, max: song?.duration ?? 1) { v in
+                UISlider(
+                    label: "播放进度",
+                    value: song != nil ? player.progress : 0,
+                    max: song?.duration ?? 1,
+                    accessibilityValueText: song.map {
+                        "已播放 \(formatTime(player.progress))，共 \(formatTime($0.duration))"
+                    }
+                ) { v in
                     if song != nil { player.seek(to: v) }
                 }
+                .disabled(song == nil || player.isLoading)
+                .accessibilityHidden(song == nil)
                 Text(song != nil ? "-" + formatTime((song?.duration ?? 0) - player.progress) : "-:--")
                     .frame(width: 40, alignment: .trailing)
             }
@@ -254,8 +263,16 @@ private struct PlayButton: View {
         let iconTransition: ContentTransition = reduceMotion ? .opacity : .symbolEffect(.replace)
 
         Button { app.player.togglePlay() } label: {
-            Image(systemName: app.player.isPlaying ? "pause.fill" : "play.fill")
-                .font(.system(size: 17, weight: .semibold))
+            ZStack {
+                if app.player.isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(app.tokens.accentFg)
+                } else {
+                    Image(systemName: app.player.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                }
+            }
                 .foregroundStyle(app.tokens.accentFg)
                 .frame(width: 40, height: 40)
                 .background(Circle().fill(app.tokens.accent))
@@ -268,11 +285,11 @@ private struct PlayButton: View {
                 .animation(MotionTokens.press, value: pressed)
         }
         .buttonStyle(.plain)
-        .disabled(disabled)
+        .disabled(disabled || app.player.isLoading)
         .opacity(disabled ? 0.35 : 1)
         .onHover { hovering = $0 }
-        .help(app.player.isPlaying ? "暂停" : "播放")
-        .accessibilityLabel(app.player.isPlaying ? "暂停" : "播放")
+        .help(app.player.isLoading ? "正在加载" : (app.player.isPlaying ? "暂停" : "播放"))
+        .accessibilityLabel(app.player.isLoading ? "正在加载歌曲" : (app.player.isPlaying ? "暂停" : "播放"))
         .pressEvents(onPress: { pressed = true }, onRelease: { pressed = false })
     }
 }

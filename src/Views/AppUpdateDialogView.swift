@@ -16,21 +16,21 @@ struct AppUpdateDialogView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("发现新版本")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.title3.bold())
                         .foregroundStyle(app.tokens.text)
                     Text("Crate \(update.displayVersion)")
-                        .font(.system(size: 13))
+                        .font(.body)
                         .foregroundStyle(app.tokens.text2)
                 }
             }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("发布说明")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(app.tokens.text2)
                 ScrollView {
                     Text(update.releaseNotesPreview)
-                        .font(.system(size: 12.5))
+                        .font(.body)
                         .foregroundStyle(app.tokens.text)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
@@ -55,7 +55,7 @@ struct AppUpdateDialogView: View {
                             .controlSize(.small)
                     }
                     Text(message)
-                        .font(.system(size: 12.5))
+                        .font(.subheadline)
                         .foregroundStyle(statusColor)
                 }
                 .frame(minHeight: 18, alignment: .leading)

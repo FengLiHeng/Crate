@@ -1,6 +1,6 @@
 import Foundation
 
-struct Album: Identifiable, Codable, Hashable {
+struct Album: Identifiable, Codable, Hashable, Sendable {
     let id: String
     var title: String
     var artist: String
@@ -12,7 +12,7 @@ struct Album: Identifiable, Codable, Hashable {
     var h2: Double
 }
 
-struct Song: Identifiable, Codable, Hashable {
+struct Song: Identifiable, Codable, Hashable, Sendable {
     let id: String
     var title: String
     /// 为 nil 时回退到所属专辑的艺人，再回退"未知艺人"
@@ -25,7 +25,7 @@ struct Song: Identifiable, Codable, Hashable {
     var artworkData: Data? = nil
 }
 
-struct Playlist: Identifiable, Codable, Hashable {
+struct Playlist: Identifiable, Codable, Hashable, Sendable {
     let id: String
     var name: String
     var songIds: [String]

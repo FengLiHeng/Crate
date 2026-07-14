@@ -71,6 +71,7 @@ final class CrateAppDelegateTests: XCTestCase {
     }
 }
 
+@MainActor
 private struct AppDelegateFixture {
     var app: AppState
     var first: Song

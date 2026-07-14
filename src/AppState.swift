@@ -15,12 +15,38 @@ enum GroupNameValidation {
     static let maxLength = 24
 }
 
+enum ImportPhase: Equatable, Sendable {
+    case idle
+    case processing(completed: Int, total: Int)
+
+    var isImporting: Bool {
+        if case .processing = self { return true }
+        return false
+    }
+
+    var completed: Int {
+        if case .processing(let completed, _) = self { return completed }
+        return 0
+    }
+
+    var total: Int {
+        if case .processing(_, let total) = self { return total }
+        return 0
+    }
+
+    var message: String? {
+        guard case .processing(let completed, let total) = self else { return nil }
+        return "正在导入 \(completed)/\(total)"
+    }
+}
+
 struct LyricsPageState: Equatable {
     var songId: String
     var lyricsURL: URL
     var lyrics: ParsedLyrics
 }
 
+@MainActor
 @Observable
 final class AppState {
     static let favoritesGroupId = "system-favorites"
@@ -28,21 +54,21 @@ final class AppState {
     static var storeDirectoryOverride: URL?
     static var stripsBundledSampleDataOverride: Bool?
 
-    private static let persistenceQueue = DispatchQueue(label: "com.crate.library-persistence", qos: .utility)
-    private static let maxArtworkDataSize = 512 * 1024
-    private static let maxArtworkPixelLength = 640
+    nonisolated private static let persistenceQueue = DispatchQueue(label: "com.crate.library-persistence", qos: .utility)
+    nonisolated private static let maxArtworkDataSize = 512 * 1024
+    nonisolated private static let maxArtworkPixelLength = 640
 
-    private struct ImportAlbumKey: Hashable {
+    private struct ImportAlbumKey: Hashable, Sendable {
         var title: String
         var artist: String
     }
 
-    private struct AlbumArtworkUpdate {
+    struct AlbumArtworkUpdate: Sendable {
         var albumId: String
         var artworkData: Data
     }
 
-    private struct ImportResult {
+    struct ImportResult: Sendable {
         var songs: [Song] = []
         var newAlbums: [Album] = []
         var albumArtworkUpdates: [AlbumArtworkUpdate] = []
@@ -50,7 +76,7 @@ final class AppState {
         var skippedBroken = 0
     }
 
-    private struct ParsedMetadata {
+    private struct ParsedMetadata: Sendable {
         var title: String
         var artist: String?
         var albumName: String?
@@ -59,18 +85,18 @@ final class AppState {
         var sidecarArtworkData: Data?
     }
 
-    struct FilenameMetadata: Equatable {
+    struct FilenameMetadata: Equatable, Sendable {
         var title: String
         var artist: String?
     }
 
-    private struct BackfilledArtwork {
+    private struct BackfilledArtwork: Sendable {
         var songId: String
         var path: String
         var artworkData: Data
     }
 
-    private struct RelocationUpdate {
+    private struct RelocationUpdate: Sendable {
         var songId: String
         var oldPath: String
         var newURL: URL
@@ -112,6 +138,7 @@ final class AppState {
     var updatePhase: AppUpdatePhase = .idle
     var availableUpdate: AvailableAppUpdate?
     var updateDialogPresented = false
+    private(set) var importPhase: ImportPhase = .idle
 
     // ── 失效曲目（运行时派生，不持久化；design.md D1） ──
     var missingIds: Set<String> = []
@@ -120,14 +147,16 @@ final class AppState {
     let player = PlayerStore()
 
     @ObservationIgnored private var toastTask: Task<Void, Never>?
+    @ObservationIgnored private var importTask: Task<Void, Never>?
+    @ObservationIgnored private var importWorkerTask: Task<ImportResult, Never>?
     @ObservationIgnored private var loaded = false
-    @ObservationIgnored private let persistenceLock = NSLock()
-    @ObservationIgnored private var pendingPersistenceSnapshot: PersistedLibrary?
-    @ObservationIgnored private var persistenceGeneration = 0
-    @ObservationIgnored private var persistenceDrainScheduled = false
+    @ObservationIgnored nonisolated private let persistenceLock = NSLock()
+    @ObservationIgnored nonisolated(unsafe) private var pendingPersistenceSnapshot: PersistedLibrary?
+    @ObservationIgnored nonisolated(unsafe) private var persistenceGeneration = 0
+    @ObservationIgnored nonisolated(unsafe) private var persistenceDrainScheduled = false
     @ObservationIgnored private var persistenceFailureReported = false
     @ObservationIgnored private var persistenceProtectionActive = false
-    @ObservationIgnored private let persistenceStoreURL: URL
+    @ObservationIgnored nonisolated private let persistenceStoreURL: URL
 
     init() {
         let savedTheme = UserDefaults.standard.string(forKey: "lmp-theme")
@@ -727,7 +756,7 @@ final class AppState {
 
     // ── 导入（spec: library-import） ──
 
-    static func canDecodeAudio(at url: URL) -> Bool {
+    nonisolated static func canDecodeAudio(at url: URL) -> Bool {
         AudioFileSupport.canDecode(at: url)
     }
 
@@ -774,40 +803,83 @@ final class AppState {
             showToast("未发现可导入的音频文件")
             return
         }
+        guard !importPhase.isImporting else {
+            showToast("音乐正在导入，请稍候或先取消当前任务")
+            return
+        }
+
         let existingPaths = Set(library.compactMap { $0.fileURL?.standardizedFileURL.path })
         let albumsSnapshot = albums
-        Task.detached(priority: .userInitiated) { [weak self, audioURLs, existingPaths, albumsSnapshot] in
-            let result = await Self.buildImportResult(
+        importPhase = .processing(completed: 0, total: audioURLs.count)
+
+        let progress: @MainActor @Sendable (Int) -> Void = { [weak self] completed in
+            guard let self, self.importPhase.isImporting else { return }
+            self.importPhase = .processing(completed: completed, total: audioURLs.count)
+        }
+        let worker = Task.detached(priority: .userInitiated) {
+            await Self.buildImportResult(
                 urls: audioURLs,
                 existingPaths: existingPaths,
-                albums: albumsSnapshot
+                albums: albumsSnapshot,
+                progress: progress
             )
-            await self?.applyImportResult(result)
+        }
+        importWorkerTask = worker
+        importTask = Task { @MainActor [weak self] in
+            let result = await worker.value
+            guard let self else { return }
+            defer {
+                self.importWorkerTask = nil
+                self.importTask = nil
+                self.importPhase = .idle
+            }
+            guard !Task.isCancelled, !worker.isCancelled else { return }
+            self.applyImportResult(result)
         }
     }
 
+    func cancelImport() {
+        guard importPhase.isImporting else { return }
+        importWorkerTask?.cancel()
+        importTask?.cancel()
+        importWorkerTask = nil
+        importTask = nil
+        importPhase = .idle
+        showToast("已取消音乐导入")
+    }
+
     @MainActor private func applyImportResult(_ result: ImportResult) {
+        var updatedAlbums = albums
+        var albumIdRemap: [String: String] = [:]
+
+        for update in result.albumArtworkUpdates {
+            guard let index = updatedAlbums.firstIndex(where: { $0.id == update.albumId }),
+                  updatedAlbums[index].artworkData == nil else { continue }
+            updatedAlbums[index].artworkData = update.artworkData
+        }
+        for album in result.newAlbums {
+            let resolvedId = Self.mergeImportedAlbum(album, into: &updatedAlbums)
+            albumIdRemap[album.id] = resolvedId
+        }
+
+        let remappedSongs = result.songs.map { song in
+            var song = song
+            if let albumId = song.albumId, let resolvedId = albumIdRemap[albumId] {
+                song.albumId = resolvedId
+            }
+            return song
+        }
         let currentPaths = Set(library.compactMap { $0.fileURL?.standardizedFileURL.path })
-        let songsToAdd = result.songs.filter { song in
+        let songsToAdd = remappedSongs.filter { song in
             guard let path = song.fileURL?.standardizedFileURL.path else { return true }
             return !currentPaths.contains(path)
         }
-        let skippedExisting = result.skippedExisting + (result.songs.count - songsToAdd.count)
+        let skippedExisting = result.skippedExisting + (remappedSongs.count - songsToAdd.count)
 
         if !songsToAdd.isEmpty {
             allowPersistenceAfterUserChange()
-            if !result.albumArtworkUpdates.isEmpty {
-                var updatedAlbums = albums
-                for update in result.albumArtworkUpdates {
-                    guard let index = updatedAlbums.firstIndex(where: { $0.id == update.albumId }),
-                          updatedAlbums[index].artworkData == nil else { continue }
-                    updatedAlbums[index].artworkData = update.artworkData
-                }
+            if updatedAlbums != albums {
                 albums = updatedAlbums
-            }
-            if !result.newAlbums.isEmpty {
-                let existingAlbumIds = Set(albums.map(\.id))
-                albums.append(contentsOf: result.newAlbums.filter { !existingAlbumIds.contains($0.id) })
             }
             library.append(contentsOf: songsToAdd)
             for song in songsToAdd {
@@ -827,7 +899,12 @@ final class AppState {
         }
     }
 
-    private static func buildImportResult(urls: [URL], existingPaths: Set<String>, albums: [Album]) async -> ImportResult {
+    nonisolated private static func buildImportResult(
+        urls: [URL],
+        existingPaths: Set<String>,
+        albums: [Album],
+        progress: @MainActor @Sendable (Int) -> Void
+    ) async -> ImportResult {
         var result = ImportResult()
         var seenPaths = Set<String>()
         var albumIdsByKey: [ImportAlbumKey: String] = [:]
@@ -839,51 +916,84 @@ final class AppState {
         }
         var albumsById = Dictionary(uniqueKeysWithValues: albums.map { ($0.id, $0) })
 
+        var processed = 0
         for url in urls {
+            guard !Task.isCancelled else { break }
             let path = url.standardizedFileURL.path
-            guard !existingPaths.contains(path), seenPaths.insert(path).inserted else {
+            if existingPaths.contains(path) || !seenPaths.insert(path).inserted {
                 result.skippedExisting += 1
-                continue
-            }
-            guard canDecodeAudio(at: url) else {
+            } else if !canDecodeAudio(at: url) {
                 result.skippedBroken += 1
-                continue
-            }
-            guard let metadata = await parseMetadata(url: url) else {
-                result.skippedBroken += 1
-                continue
-            }
-
-            var albumId: String?
-            let artworkData = metadata.embeddedArtworkData ?? metadata.sidecarArtworkData
-            if let albumName = metadata.albumName?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !albumName.isEmpty {
-                let artist = metadata.artist ?? "未知艺人"
-                albumId = albumIdForImport(
-                    title: albumName,
-                    artist: artist,
-                    artworkData: artworkData,
+            } else if let metadata = await parseMetadata(url: url) {
+                appendImportedSong(
+                    url: url,
+                    metadata: metadata,
                     albumIdsByKey: &albumIdsByKey,
                     albumsById: &albumsById,
                     result: &result
                 )
+            } else {
+                result.skippedBroken += 1
             }
-
-            result.songs.append(Song(
-                id: "imp-" + UUID().uuidString,
-                title: metadata.title,
-                artist: metadata.artist,
-                albumId: albumId,
-                duration: metadata.duration,
-                fileURL: url,
-                artworkData: metadata.sidecarArtworkData ?? (albumId == nil ? metadata.embeddedArtworkData : nil)
-            ))
+            processed += 1
+            await progress(processed)
         }
 
         return result
     }
 
-    private static func albumIdForImport(
+    nonisolated private static func appendImportedSong(
+        url: URL,
+        metadata: ParsedMetadata,
+        albumIdsByKey: inout [ImportAlbumKey: String],
+        albumsById: inout [String: Album],
+        result: inout ImportResult
+    ) {
+        var albumId: String?
+        let artworkData = metadata.embeddedArtworkData ?? metadata.sidecarArtworkData
+        if let albumName = metadata.albumName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !albumName.isEmpty {
+            let artist = metadata.artist ?? "未知艺人"
+            albumId = albumIdForImport(
+                title: albumName,
+                artist: artist,
+                artworkData: artworkData,
+                albumIdsByKey: &albumIdsByKey,
+                albumsById: &albumsById,
+                result: &result
+            )
+        }
+
+        result.songs.append(Song(
+            id: "imp-" + UUID().uuidString,
+            title: metadata.title,
+            artist: metadata.artist,
+            albumId: albumId,
+            duration: metadata.duration,
+            fileURL: url,
+            artworkData: metadata.sidecarArtworkData ?? (albumId == nil ? metadata.embeddedArtworkData : nil)
+        ))
+    }
+
+    nonisolated static func mergeImportedAlbum(_ candidate: Album, into albums: inout [Album]) -> String {
+        let candidateKey = normalizedImportAlbumKey(title: candidate.title, artist: candidate.artist)
+        if let index = albums.firstIndex(where: {
+            normalizedImportAlbumKey(title: $0.title, artist: $0.artist) == candidateKey
+        }) {
+            if albums[index].artworkData == nil, let artworkData = candidate.artworkData {
+                albums[index].artworkData = artworkData
+            }
+            return albums[index].id
+        }
+        albums.append(candidate)
+        return candidate.id
+    }
+
+    nonisolated private static func normalizedImportAlbumKey(title: String, artist: String) -> String {
+        "\(title.trimmingCharacters(in: .whitespacesAndNewlines).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current))\u{1F}\(artist.trimmingCharacters(in: .whitespacesAndNewlines).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current))"
+    }
+
+    nonisolated private static func albumIdForImport(
         title: String,
         artist: String,
         artworkData: Data?,
@@ -920,7 +1030,7 @@ final class AppState {
     }
 
     /// 读取元数据：标题/艺术家/专辑/真实时长/封面，缺失回退（spec: 元数据解析）
-    private static func parseMetadata(url: URL) async -> ParsedMetadata? {
+    nonisolated private static func parseMetadata(url: URL) async -> ParsedMetadata? {
         let filenameStem = url.deletingPathExtension().lastPathComponent
         let asset = AVURLAsset(url: url)
         var title = filenameStem
@@ -956,7 +1066,7 @@ final class AppState {
                 case .commonKeyArtwork:
                     if artworkData == nil,
                        let data = try? await item.load(.dataValue),
-                       let prepared = Self.preparedArtworkData(data) {
+                       let prepared = await Self.preparedArtworkData(data) {
                         artworkData = prepared
                     }
                 default: break
@@ -964,7 +1074,7 @@ final class AppState {
             }
         }
         if artworkData == nil {
-            sidecarArtworkData = Self.sidecarArtworkData(for: url)
+            sidecarArtworkData = await Self.sidecarArtworkData(for: url)
             artworkData = sidecarArtworkData
         }
         let fallback = metadataWithFilenameFallback(
@@ -984,7 +1094,7 @@ final class AppState {
         )
     }
 
-    static func metadataWithFilenameFallback(
+    nonisolated static func metadataWithFilenameFallback(
         filenameStem: String,
         title: String,
         hasMetadataTitle: Bool,
@@ -1005,7 +1115,7 @@ final class AppState {
         )
     }
 
-    static func metadataFromFilenameStem(_ stem: String) -> FilenameMetadata? {
+    nonisolated static func metadataFromFilenameStem(_ stem: String) -> FilenameMetadata? {
         let pattern = #"^(.+)\s+[-–—－]\s+(.+)$"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(stem.startIndex..<stem.endIndex, in: stem)
@@ -1086,14 +1196,14 @@ final class AppState {
         return jpegData
     }
 
-    private static func sidecarArtworkData(for audioURL: URL) -> Data? {
+    nonisolated private static func sidecarArtworkData(for audioURL: URL) async -> Data? {
         let baseURL = audioURL.deletingPathExtension()
         let extensions = ["jpg", "jpeg", "png", "webp", "JPG", "JPEG", "PNG", "WEBP"]
         for ext in extensions {
             let imageURL = baseURL.appendingPathExtension(ext)
             guard FileManager.default.fileExists(atPath: imageURL.path),
                   let data = try? Data(contentsOf: imageURL),
-                  let prepared = preparedArtworkData(data) else { continue }
+                  let prepared = await preparedArtworkData(data) else { continue }
             return prepared
         }
         return nil
@@ -1129,9 +1239,10 @@ final class AppState {
         }
         guard !snapshot.isEmpty else { return }
         Task.detached(priority: .utility) { [weak self, snapshot] in
-            let backfills = snapshot.compactMap { id, fileURL, path -> BackfilledArtwork? in
-                guard let data = Self.sidecarArtworkData(for: fileURL) else { return nil }
-                return BackfilledArtwork(songId: id, path: path, artworkData: data)
+            var backfills: [BackfilledArtwork] = []
+            for (id, fileURL, path) in snapshot {
+                guard let data = await Self.sidecarArtworkData(for: fileURL) else { continue }
+                backfills.append(BackfilledArtwork(songId: id, path: path, artworkData: data))
             }
             await self?.applyBackfilledArtwork(backfills)
         }
@@ -1157,7 +1268,7 @@ final class AppState {
 
     // ── 持久化（design.md D6：JSON 存 Application Support） ──
 
-    private struct PersistedLibrary: Codable {
+    private struct PersistedLibrary: Codable, Sendable {
         var albums: [Album]
         var songs: [Song]
         var playlists: [Playlist]
@@ -1242,7 +1353,7 @@ final class AppState {
         }
     }
 
-    private func drainPersistenceQueue() {
+    nonisolated private func drainPersistenceQueue() {
         while true {
             let snapshot: PersistedLibrary
             let generation: Int
@@ -1274,21 +1385,21 @@ final class AppState {
         }
     }
 
-    private func reportPersistenceWriteFailure(_ error: Error) {
-        DispatchQueue.main.async { [weak self] in
+    nonisolated private func reportPersistenceWriteFailure(_ error: Error) {
+        Task { @MainActor [weak self] in
             guard let self, !self.persistenceFailureReported else { return }
             self.persistenceFailureReported = true
             self.showToast("曲库保存失败，请检查磁盘权限或空间")
         }
     }
 
-    private func markPersistenceWriteSucceeded() {
-        DispatchQueue.main.async { [weak self] in
+    nonisolated private func markPersistenceWriteSucceeded() {
+        Task { @MainActor [weak self] in
             self?.persistenceFailureReported = false
         }
     }
 
-    private static func writePersistenceSnapshot(_ snapshot: PersistedLibrary, to url: URL) throws {
+    nonisolated private static func writePersistenceSnapshot(_ snapshot: PersistedLibrary, to url: URL) throws {
         let data = try JSONEncoder().encode(snapshot)
         try data.write(to: url, options: .atomic)
     }

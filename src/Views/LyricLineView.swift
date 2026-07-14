@@ -7,6 +7,9 @@ struct LyricLineView: View {
     @Environment(AppState.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
+    @ScaledMetric(relativeTo: .title) private var activeFontSize: CGFloat = 28
+    @ScaledMetric(relativeTo: .title3) private var normalFontSize: CGFloat = 19
+    @ScaledMetric(relativeTo: .caption) private var timestampFontSize: CGFloat = 11
 
     private var timeLabel: String {
         formatTime(line.time)
@@ -17,7 +20,7 @@ struct LyricLineView: View {
             app.player.seek(to: line.time)
         } label: {
             Text(line.text.isEmpty ? " " : line.text)
-                .font(.system(size: active ? 28 : 19, weight: active ? .bold : .semibold))
+                .font(.system(size: active ? activeFontSize : normalFontSize, weight: active ? .bold : .semibold))
                 .foregroundStyle(active ? app.tokens.text : app.tokens.text2)
                 .opacity(active ? 1 : 0.52)
                 .lineSpacing(5)
@@ -35,7 +38,7 @@ struct LyricLineView: View {
                 }
                 .overlay(alignment: .trailing) {
                     Text(timeLabel)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .font(.system(size: timestampFontSize, weight: .semibold, design: .monospaced))
                         .foregroundStyle(app.tokens.accentFg)
                         .padding(.horizontal, 8)
                         .frame(height: 24)

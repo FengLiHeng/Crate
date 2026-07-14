@@ -125,3 +125,14 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 #### Scenario: 清空后重新导入
 - **WHEN** 用户清空歌曲列表后导入新的歌曲文件或目录
 - **THEN** 新导入的歌曲出现在资料库中，旧歌曲不会重新出现在资料库、分组或搜索结果中
+
+### Requirement: 可操作的曲库空状态
+歌曲表格为空时，应用 SHALL 使用清晰的空状态展示原因和可执行的下一步。空资料库 SHALL 提供直接导入音乐的操作；搜索无结果 SHALL 提供直接清除当前搜索的操作。
+
+#### Scenario: 空资料库直接导入
+- **WHEN** 资料库没有歌曲且无搜索词
+- **THEN** 空状态显示导入说明和可直接触发导入的按钮
+
+#### Scenario: 搜索无结果直接清除
+- **WHEN** 当前搜索词没有匹配歌曲
+- **THEN** 空状态显示无结果说明和清除搜索按钮，点击后恢复完整列表

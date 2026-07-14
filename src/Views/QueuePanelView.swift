@@ -16,7 +16,7 @@ struct QueuePanelView: View {
             // 头部
             HStack {
                 Text("待播清单")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.headline)
                     .foregroundStyle(app.tokens.text)
                 Spacer()
                 if hasUpcoming {
@@ -26,7 +26,7 @@ struct QueuePanelView: View {
                         }
                     }
                         .buttonStyle(.plain)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(app.tokens.accent)
                 }
                 IconButton(systemName: "xmark", size: 11, side: 24, help: "关闭") {
@@ -93,7 +93,7 @@ struct QueuePanelView: View {
 
     private func sectionLabel(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 11, weight: .bold))
+            .font(.caption.bold())
             .kerning(0.55)
             .foregroundStyle(app.tokens.text3)
             .padding(.init(top: 14, leading: 8, bottom: 6, trailing: 8))
@@ -117,11 +117,11 @@ private struct QueueRow: View {
             CoverView(song: song, album: album, size: 34, radius: 6)
             VStack(alignment: .leading, spacing: 1) {
                 Text(song.title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(isCurrent ? app.tokens.accent : app.tokens.text)
                     .lineLimit(1)
                 Text(app.artistName(for: song))
-                    .font(.system(size: 11.5))
+                    .font(.caption)
                     .foregroundStyle(app.tokens.text2)
                     .lineLimit(1)
             }

@@ -103,23 +103,28 @@ final class PlayerStoreTests: XCTestCase {
         let song = Song(id: "pending", title: "Pending", artist: nil, albumId: nil, duration: 10, fileURL: audioURL)
         let store = PlayerStore()
         let fakeEngine = FakeEngine()
+        let buildCount = LockedCounter()
         let buildStarted = DispatchSemaphore(value: 0)
         let releaseBuild = DispatchSemaphore(value: 0)
         store.songProvider = { $0 == song.id ? song : nil }
-        store.engineBuildQueue = DispatchQueue(label: "crate-tests-engine-build")
         store.engineFactory = { _, _ in
+            buildCount.increment()
             buildStarted.signal()
             _ = releaseBuild.wait(timeout: .now() + 2)
             return fakeEngine
         }
 
         store.playFrom([song], index: 0)
+        XCTAssertTrue(store.isLoading)
         XCTAssertEqual(buildStarted.wait(timeout: .now() + 1), .success)
+        store.togglePlay()
+        XCTAssertEqual(buildCount.value, 1)
 
         store.stopPlayback()
         releaseBuild.signal()
 
         XCTAssertTrue(waitForCondition { store.currentId == nil && !store.isPlaying })
+        XCTAssertFalse(store.isLoading)
         XCTAssertFalse(fakeEngine.playCalled)
     }
 
@@ -143,7 +148,6 @@ final class PlayerStoreTests: XCTestCase {
         store.songProvider = { songs[$0] }
         store.onToast = { toasts.append($0) }
         store.onMissing = { missingIds.append($0) }
-        store.engineBuildQueue = DispatchQueue(label: "crate-tests-engine-failure-build")
         store.engineFactory = { url, _ in
             url == firstURL ? firstEngine : secondEngine
         }
@@ -214,7 +218,6 @@ final class PlayerStoreTests: XCTestCase {
         let originEngine = FakeEngine()
         var toasts: [String] = []
         store.songProvider = { songs[$0] }
-        store.engineBuildQueue = DispatchQueue(label: "crate-tests-backward-fallback")
         store.engineFactory = { _, _ in originEngine }
         store.onToast = { toasts.append($0) }
 
@@ -448,9 +451,9 @@ final class AppStatePersistenceTests: XCTestCase {
     }
 }
 
-private final class FakeEngine: PlaybackEngine {
-    var onFinished: (() -> Void)?
-    var onFailed: (() -> Void)?
+private final class FakeEngine: PlaybackEngine, @unchecked Sendable {
+    var onFinished: (@Sendable () -> Void)?
+    var onFailed: (@Sendable () -> Void)?
     var currentTime: Double = 0
     var playCalled = false
 
@@ -460,6 +463,23 @@ private final class FakeEngine: PlaybackEngine {
     func setVolume(_ volume: Double) {}
     func stop() {}
     func fail() { onFailed?() }
+}
+
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    func increment() {
+        lock.lock()
+        count += 1
+        lock.unlock()
+    }
 }
 
 @MainActor

@@ -1,6 +1,7 @@
 import XCTest
 @testable import Crate
 
+@MainActor
 final class AppStateMetadataTests: XCTestCase {
     func testParsesTitleArtistFilenameFallback() {
         let metadata = AppState.metadataWithFilenameFallback(

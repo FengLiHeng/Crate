@@ -39,11 +39,11 @@ private struct ContentHeader: View {
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(app.viewTitle)
-                            .font(.system(size: 24, weight: .bold))
+                            .font(.title.bold())
                             .kerning(-0.3)
                             .foregroundStyle(app.tokens.text)
                         Text("\(songs.count) 首歌曲")
-                            .font(.system(size: 12.5))
+                            .font(.subheadline)
                             .foregroundStyle(app.tokens.text2)
                     }
                 }
@@ -54,14 +54,26 @@ private struct ContentHeader: View {
                 HStack(spacing: 8) {
                     SearchField(text: $app.search)
                     if !app.missingIds.isEmpty {
-                        ToolButton(systemName: "exclamationmark.triangle", help: "清理失效曲目") {
+                        ToolButton(
+                            systemName: "exclamationmark.triangle",
+                            help: "清理失效曲目",
+                            disabled: app.importPhase.isImporting
+                        ) {
                             app.cleanupMissing()
                         }
                     }
-                    ToolButton(systemName: "trash", help: "清空歌曲列表", disabled: app.library.isEmpty) {
+                    ToolButton(
+                        systemName: "trash",
+                        help: "清空歌曲列表",
+                        disabled: app.library.isEmpty || app.importPhase.isImporting
+                    ) {
                         confirmClearLibrary = true
                     }
-                    ImportMenuButton()
+                    if app.importPhase.isImporting {
+                        ImportProgressControl()
+                    } else {
+                        ImportMenuButton()
+                    }
                     ToolButton(
                         systemName: app.theme == .light ? "moon" : "sun.max",
                         help: app.theme == .light ? "切换深色模式" : "切换浅色模式"
@@ -83,6 +95,42 @@ private struct ContentHeader: View {
         } message: {
             Text("这会移除列表中的所有歌曲并清空待播清单，但不会删除磁盘上的音频文件。")
         }
+    }
+}
+
+private struct ImportProgressControl: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView(
+                value: Double(app.importPhase.completed),
+                total: Double(max(app.importPhase.total, 1))
+            )
+            .progressViewStyle(.linear)
+            .frame(width: 88)
+            .accessibilityLabel("导入进度")
+            .accessibilityValue(app.importPhase.message ?? "正在导入")
+
+            Text(app.importPhase.message ?? "正在导入")
+                .font(.caption)
+                .foregroundStyle(app.tokens.text2)
+                .monospacedDigit()
+                .accessibilityHidden(true)
+
+            Button {
+                app.cancelImport()
+            } label: {
+                Label("取消导入", systemImage: "xmark.circle.fill")
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(app.tokens.text2)
+            }
+            .buttonStyle(.plain)
+            .help("取消导入")
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 32)
+        .background(app.tokens.ctrl, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -180,6 +228,7 @@ private struct ImportMenuButton: View {
     }
 }
 
+@MainActor
 private final class ImportMenuActionTarget: NSObject, NSMenuDelegate {
     private static var retainedTargets: [ImportMenuActionTarget] = []
 
