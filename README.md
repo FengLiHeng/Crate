@@ -1,42 +1,45 @@
-# Crate
+<p align="center">
+  <img src="docs/logo.png" alt="Crate 应用图标" width="128">
+</p>
 
-Crate 是一个 macOS SwiftUI 本地音乐播放器，专注于导入、整理和播放个人本地曲库。它保留桌面播放器该有的密度和效率：表格曲库、分组管理、底部播放条、待播清单、浅色/深色主题，以及基于同名 `.lrc` 文件的动态歌词页。
+<h1 align="center">Crate</h1>
 
-<img src="docs/logo.png" alt="Crate 应用图标" width="128">
+<p align="center">一款为 macOS 打造的本地音乐播放器。</p>
+
+<p align="center">
+  <a href="https://github.com/FengLiHeng/Crate/releases">下载最新版</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#功能">功能</a>
+</p>
+
+Crate 专注于让个人曲库重新变得好用：导入文件或文件夹后，你可以在紧凑清晰的表格曲库中浏览、搜索和整理音乐，随时控制播放、待播队列与分组。它提供浅色与深色主题、动态歌词和本地持久化，不需要把音乐交给云端。
+
+> 仅处理你选择导入的本地音乐文件；曲库与偏好保存在本机。
 
 ## 界面预览
 
-### 浅色主题
+| 浅色主题 | 深色主题 |
+| --- | --- |
+| ![Crate 浅色主题首页](docs/截图/浅色-首页.png) | ![Crate 深色主题首页](docs/截图/深色-首页.png) |
 
-![Crate 浅色主题首页](docs/截图/浅色-首页.png)
+| 待播清单 | 动态歌词 |
+| --- | --- |
+| ![Crate 浅色主题待播清单](docs/截图/浅色-待播清单.png) | ![Crate 浅色主题歌词页](docs/截图/浅色-歌词.png) |
 
-![Crate 浅色主题待播清单](docs/截图/浅色-待播清单.png)
+## 功能
 
-![Crate 浅色主题歌词页](docs/截图/浅色-歌词.png)
+- **本地曲库**：导入音频文件或整个文件夹，自动读取标题、艺术家、专辑、时长与内嵌封面。
+- **高效浏览**：表格曲库、实时搜索、当前播放高亮，以及失效文件的重新定位和批量清理。
+- **自由整理**：创建、重命名、排序和删除音乐分组，把喜欢的歌曲放到一起。
+- **完整播放控制**：播放/暂停、上下首、进度与音量调节、随机播放、循环模式和插播队列。
+- **待播清单**：清楚区分当前播放、即将插播与后续曲目，随时调整播放顺序。
+- **歌词体验**：自动读取同名 `.lrc`，歌词跟随进度高亮滚动；点击歌词即可跳转播放位置。
+- **封面回退**：没有内嵌封面时，可读取同目录同名 `.jpg`、`.jpeg`、`.png` 或 `.webp` 图片。
+- **桌面化外观**：暖白收藏目录风格与石墨器材面板风格两套主题，选择会自动保留。
 
-### 深色主题
+## 歌词与封面文件
 
-![Crate 深色主题首页](docs/截图/深色-首页.png)
-
-## 功能概览
-
-- 本地曲库导入：支持导入音频文件或文件夹，过滤可播放格式。
-- 元数据读取：读取标题、艺术家、专辑、时长和内嵌封面；缺失时回退到文件名、`歌曲 - 歌手` 文件名格式和占位封面。
-- 同名封面文件：音频无内嵌封面时，自动读取同目录同名 `.jpg`、`.jpeg`、`.png`、`.webp`。
-- 同名歌词文件：当前播放歌曲旁存在同名 `.lrc` 时，点击播放条左侧封面进入动态歌词页。
-- 动态歌词播放：歌词随播放进度高亮和滚动，点击歌词行可跳转播放位置。
-- 曲库浏览：表格展示序号、标题、艺术家、专辑和时长，支持当前播放行高亮。
-- 搜索过滤：按标题、艺术家、专辑名实时搜索当前视图。
-- 播放控制：支持播放/暂停、上一首/下一首、进度拖动、音量、随机播放和循环模式。
-- 待播清单：右侧面板展示当前播放、插播队列和后续曲目。
-- 音乐分组：支持创建、重命名、删除、拖动排序，以及将歌曲加入分组。
-- 主题配色：浅色主题采用暖白收藏目录气质，深色主题采用石墨器材面板气质。
-- 文件可用性处理：标记失效曲目，支持重新定位和批量清理。
-- 本地持久化：曲库、分组和主题偏好会在重启后保留。
-
-## 歌词与封面文件约定
-
-Crate 使用音频文件旁的 sidecar 文件，不会把用户的歌词文件复制进应用目录。
+Crate 使用音乐文件旁的 sidecar 文件，不会复制或改动你的歌词与封面文件。
 
 ```text
 Music/
@@ -45,127 +48,58 @@ Music/
   少女的祈祷 - 杨千嬅.jpg
 ```
 
-- `.lrc`：点击播放条左侧封面时按当前磁盘状态懒加载；补放歌词文件后无需重新导入歌曲。
-- 图片封面：导入或启动回填时读取，并作为歌曲封面持久化。
-- 歌词解析支持标准 LRC 时间戳、同一行多个时间戳和 `[offset:+/-毫秒]`。
-
-## 歌曲文件名兼容
-
-导入音频时，Crate 会优先使用文件内的标题和艺术家元数据。若艺术家缺失，且文件名符合 `歌曲 - 歌手`、`歌曲 – 歌手`、`歌曲 — 歌手` 或 `歌曲 － 歌手` 格式，应用会从文件名中拆出标题和艺术家：
-
-```text
-月光 - 徐良&阿悄.aac  ->  标题：月光，艺术家：徐良&阿悄
-```
-
-- 如果文件内已有标题但缺少艺术家，只使用文件名补齐艺术家，保留原有标题。
-- 如果标题和艺术家都缺失，使用分隔符前半段作为标题、后半段作为艺术家。
-- 如果文件名不含分隔符两侧空格，例如 `月光-徐良&阿悄.aac`，不会自动拆分，标题仍回退为完整文件名。
-- 已持久化的旧曲库在启动时也会应用同样的文件名回填，并写回修复后的标题和艺术家。
+- 歌词文件使用同名 `.lrc`；补放歌词后无需重新导入歌曲。
+- 封面可使用同名 `.jpg`、`.jpeg`、`.png` 或 `.webp`。
+- 支持标准 LRC 时间戳、单行多个时间戳和 `[offset:+/-毫秒]`。
+- 文件内缺少艺术家时，会识别 `歌曲 - 歌手` 形式的文件名作为补充信息。
 
 ## 快速开始
 
+### 使用应用
+
+从 [GitHub Releases](https://github.com/FengLiHeng/Crate/releases) 下载最新的 macOS 应用，首次打开后导入音乐文件或音乐文件夹即可开始使用。
+
+### 本地开发
+
 ```bash
+# 编译
 swift build
-```
 
-编译 SwiftPM target，用于快速检查 Swift/SwiftUI 编译错误。
-
-```bash
+# 启动应用
 swift run Crate
-```
 
-通过 SwiftPM 启动应用，适合开发期验证。
-
-```bash
-open Crate.xcodeproj
-```
-
-用 Xcode 打开项目，处理签名、调试和 App 图标资源。
-
-```bash
+# 生成可测试的 app bundle
 Scripts/bundle.sh
 ```
 
-构建 arm64 Release 并生成本地可测试 app：
-
-```text
-build/Crate.app
-```
-
-## 测试与验证
-
-提交前建议至少运行：
-
-```bash
-swift test
-swift build
-openspec validate <change-name>
-Scripts/bundle.sh
-```
-
-涉及 UI、导入、播放、歌词或持久化时，还需要手动验证：
-
-- 空曲库首次启动。
-- 文件导入和文件夹导入。
-- 重复路径处理。
-- 有封面、无封面、同名 sidecar 封面。
-- 有同名 `.lrc`、无 `.lrc`、无法解析 `.lrc`。
-- 歌词页打开、关闭、自动滚动、点击歌词行跳转。
-- 播放/暂停、上一首/下一首、进度拖动、随机和循环。
-- 待播清单插播、清空和上下文回归。
-- 分组创建、重命名、删除、拖动排序。
-- 重启后曲库、分组、封面和主题保留。
+打包后的应用位于 `build/Crate.app`。如需处理签名或调试，可运行 `open Crate.xcodeproj`。
 
 ## 项目结构
 
 ```text
 src/
-  CrateApp.swift            应用入口
-  AppState.swift            曲库、分组、导入、歌词、持久化和全局状态
-  PlayerStore.swift         播放状态、播放上下文和待播队列
-  PlaybackEngine.swift      AVAudioPlayer 播放封装
-  Lyrics.swift              LRC 解析和歌词文件解码
-  Views/                    SwiftUI 页面和组件
-  Assets.xcassets/          应用图标资源
+  CrateApp.swift          应用入口
+  AppState.swift          曲库、导入、歌词、分组与持久化
+  PlayerStore.swift       播放状态、上下文与待播队列
+  PlaybackEngine.swift    AVAudioPlayer 播放封装
+  Views/                  SwiftUI 页面与组件
 
-Tests/CrateTests/
-  PlayerStoreTests.swift    播放状态机和持久化测试
-  LRCParserTests.swift      LRC 解析器测试
-  AppStateLyricsTests.swift 歌词打开、缺失和切歌刷新测试
-
-openspec/
-  specs/                    当前产品能力规格
-  changes/                  进行中的 OpenSpec 变更
-  changes/archive/          已归档变更
-
-Scripts/
-  bundle.sh                 生成 build/Crate.app 的本地打包脚本
-
-docs/设计材料/
-  原始 Web 原型、样式和设计 token 参考
-
-docs/截图/
-  README 使用的应用界面截图
-
-docs/logo.png
-  README 展示和 App Icon 生成源图
+Scripts/bundle.sh         生成 build/Crate.app
+docs/截图/                README 界面截图
+docs/logo.png             README 与应用图标源图
+openspec/                 产品规格与变更记录
 ```
-
-## OpenSpec 工作流
-
-行为变更应先创建或更新 OpenSpec change，再实现代码。实现完成后：
-
-1. 同步 delta specs 到 `openspec/specs/`。
-2. 准确勾选对应 `tasks.md`。
-3. 运行 `openspec validate <change-name>`。
-4. 运行 `swift test`、`swift build` 和 `Scripts/bundle.sh`。
-5. 将完成的 change 归档到 `openspec/changes/archive/YYYY-MM-DD-<change-name>/`。
 
 ## 技术栈
 
-- Swift 5.9+
-- SwiftUI
-- AVFoundation
-- Swift Package Manager
-- XCTest
-- OpenSpec
+Swift 5.9+ · SwiftUI · AVFoundation · Swift Package Manager · XCTest · OpenSpec
+
+## 贡献与验证
+
+欢迎通过 Issue 或 Pull Request 提出建议。涉及行为变更时，请同步维护 OpenSpec 变更；提交前至少运行：
+
+```bash
+swift test
+swift build
+Scripts/bundle.sh
+```
