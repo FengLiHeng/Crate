@@ -73,3 +73,4 @@ fastlane/test_output
 # 本地 AI 工具配置
 /.claude/
 /.codex/
+/.vscode/
