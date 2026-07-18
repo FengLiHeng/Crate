@@ -1,15 +1,15 @@
 import SwiftUI
 import AppKit
 
-// 六列网格（player.css .thead/.row）：# 44 | 标题 2.1fr | 艺术家 1.1fr | 专辑 1.1fr | 时长 56 | 更多 40
+// 五列网格：# 44 | 标题 2.1fr | 艺术家 1.1fr | 专辑 1.1fr | 更多 40
 private struct ColumnWidths {
     let title: CGFloat
     let artist: CGFloat
     let album: CGFloat
 
     init(total: CGFloat) {
-        let gaps: CGFloat = 12 * 5
-        let flexible = Swift.max(0, total - 44 - 56 - 40 - gaps - 16)
+        let gaps: CGFloat = 12 * 4
+        let flexible = Swift.max(0, total - 44 - 40 - gaps - 16)
         title = flexible * 2.1 / 4.3
         artist = flexible * 1.1 / 4.3
         album = flexible * 1.1 / 4.3
@@ -302,7 +302,6 @@ private struct TableHeader: View {
             Text("标题").frame(width: cols.title, alignment: .leading)
             Text("艺术家").frame(width: cols.artist, alignment: .leading)
             Text("专辑").frame(width: cols.album, alignment: .leading)
-            Text("时长").frame(width: 56, alignment: .trailing)
             Spacer().frame(width: 40)
         }
         .font(.system(size: 11.5, weight: .semibold))
@@ -387,12 +386,6 @@ private struct SongRow: View {
                 .foregroundStyle(app.tokens.text2)
                 .lineLimit(1)
                 .frame(width: cols.album, alignment: .leading)
-
-            Text(formatTime(song.duration))
-                .font(.system(size: 12.5))
-                .monospacedDigit()
-                .foregroundStyle(app.tokens.text2)
-                .frame(width: 56, alignment: .trailing)
 
             // 更多菜单：与整行右键菜单复用同一组动作
             Menu {
