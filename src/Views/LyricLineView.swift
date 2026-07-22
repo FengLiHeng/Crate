@@ -20,9 +20,8 @@ struct LyricLineView: View {
             app.player.seek(to: line.time)
         } label: {
             Text(line.text.isEmpty ? " " : line.text)
-                .font(.system(size: active ? activeFontSize : normalFontSize, weight: active ? .bold : .semibold))
-                .foregroundStyle(active ? app.tokens.text : app.tokens.text2)
-                .opacity(active ? 1 : 0.52)
+                .font(.system(size: active ? activeFontSize : normalFontSize, weight: active ? .bold : .medium))
+                .foregroundStyle(active ? app.tokens.text : app.tokens.text3)
                 .lineSpacing(5)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -88,7 +88,11 @@ struct QueuePanelView: View {
         .overlay(alignment: .leading) {
             Rectangle().fill(app.tokens.sep).frame(width: 1)
         }
-        .shadow(color: .black.opacity(0.12), radius: 16, x: -6)
+        .shadow(
+            color: .black.opacity(app.theme == .dark ? 0.12 : 0.075),
+            radius: app.theme == .dark ? 16 : 12,
+            x: -5
+        )
     }
 
     private func sectionLabel(_ title: String) -> some View {

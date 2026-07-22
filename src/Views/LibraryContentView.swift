@@ -62,13 +62,6 @@ private struct ContentHeader: View {
                             app.cleanupMissing()
                         }
                     }
-                    ToolButton(
-                        systemName: "trash",
-                        help: "清空歌曲列表",
-                        disabled: app.library.isEmpty || app.importPhase.isImporting
-                    ) {
-                        confirmClearLibrary = true
-                    }
                     if app.importPhase.isImporting {
                         ImportProgressControl()
                     } else {
@@ -82,6 +75,10 @@ private struct ContentHeader: View {
                             app.theme = app.theme == .light ? .dark : .light
                         }
                     }
+                    LibraryActionsMenuButton(
+                        confirmClearLibrary: $confirmClearLibrary,
+                        clearDisabled: app.library.isEmpty || app.importPhase.isImporting
+                    )
                 }
             }
 
@@ -169,7 +166,12 @@ private struct SearchField: View {
         .padding(.horizontal, 10)
         .frame(width: 200, height: 32)
         .background(app.tokens.ctrl, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(focused ? app.tokens.accent : app.tokens.sep, lineWidth: focused ? 1.1 : 0.7)
+        }
         .animation(MotionTokens.feedback, value: text.isEmpty)
+        .animation(MotionTokens.feedback, value: focused)
         .task {
             await Task.yield()
             focused = false
@@ -204,6 +206,34 @@ private struct ToolButton: View {
     }
 }
 
+private struct LibraryActionsMenuButton: View {
+    @Binding var confirmClearLibrary: Bool
+    var clearDisabled: Bool
+
+    @State private var hovering = false
+
+    var body: some View {
+        Menu {
+            Button("清空歌曲列表", role: .destructive) {
+                confirmClearLibrary = true
+            }
+            .disabled(clearDisabled)
+        } label: {
+            ToolButtonChrome(
+                systemName: "ellipsis",
+                label: "更多操作",
+                hovering: hovering
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { hovering = $0 }
+        .help("更多操作")
+        .accessibilityLabel("更多操作")
+    }
+}
+
 private struct ImportMenuButton: View {
     @Environment(AppState.self) private var app
     @State private var hovering = false
@@ -216,7 +246,7 @@ private struct ImportMenuButton: View {
                 importFolder: { app.importFolderViaPanel() }
             ).show()
         } label: {
-            ToolButtonChrome(systemName: "plus", label: "导入音乐", hovering: hovering)
+            ToolButtonChrome(systemName: "plus", label: "导入音乐", hovering: hovering, emphasized: true)
                 .scaleEffect(pressed ? 0.94 : 1)
                 .animation(MotionTokens.feedback, value: hovering)
                 .animation(MotionTokens.press, value: pressed)
@@ -281,6 +311,7 @@ private struct ToolButtonChrome: View {
     var label: String
     var hovering: Bool
     var disabled = false
+    var emphasized = false
 
     @Environment(AppState.self) private var app
 
@@ -288,12 +319,11 @@ private struct ToolButtonChrome: View {
         Label(label, systemImage: systemName)
             .labelStyle(.iconOnly)
             .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(hovering && !disabled ? app.tokens.text : app.tokens.text2)
+            .foregroundStyle(emphasized ? app.tokens.accent : (hovering && !disabled ? app.tokens.text : app.tokens.text2))
             .frame(width: 32, height: 32)
-            .background(app.tokens.ctrl, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(hovering && !disabled ? app.tokens.hover : .clear)
+            .background(
+                emphasized ? app.tokens.accentSoft : (hovering && !disabled ? app.tokens.ctrl : .clear),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
     }
 }

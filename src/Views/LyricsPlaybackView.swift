@@ -42,9 +42,9 @@ struct LyricsPlaybackView: View {
                     if let album {
                         LinearGradient(
                             stops: [
-                                .init(color: album.playbarAmbient(theme: app.theme, hue: album.h1, alpha: app.theme == .dark ? 0.22 : 0.16), location: 0),
+                                .init(color: album.playbarAmbient(theme: app.theme, hue: album.h1, alpha: app.theme == .dark ? 0.22 : 0.09), location: 0),
                                 .init(color: .clear, location: 0.48),
-                                .init(color: album.playbarAmbient(theme: app.theme, hue: album.h2, alpha: app.theme == .dark ? 0.18 : 0.13), location: 1),
+                                .init(color: album.playbarAmbient(theme: app.theme, hue: album.h2, alpha: app.theme == .dark ? 0.18 : 0.07), location: 1),
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -75,6 +75,17 @@ struct LyricsPlaybackView: View {
 
             if let song {
                 CoverView(song: song, album: album, size: min(250, width - 72), radius: 0)
+                    .padding(6)
+                    .background(Rectangle().fill(app.tokens.menuBg))
+                    .overlay {
+                        Rectangle()
+                            .strokeBorder(app.tokens.sep, lineWidth: 0.8)
+                    }
+                    .shadow(
+                        color: .black.opacity(app.theme == .dark ? 0.24 : 0.09),
+                        radius: 10,
+                        y: 4
+                    )
                     .scaleEffect(app.player.isPlaying && !reduceMotion ? 1.012 : 1)
                     .animation(MotionTokens.lyric(reduceMotion: reduceMotion), value: app.player.isPlaying)
                 VStack(alignment: .leading, spacing: 7) {
