@@ -4,8 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SWIFT_BUILD_FLAGS_ARRAY=()
-APP_VERSION="${APP_VERSION:-2.4.0}"
-APP_BUILD="${APP_BUILD:-14}"
+APP_VERSION="${APP_VERSION:-2.5.0}"
+APP_BUILD="${APP_BUILD:-15}"
 if [[ -n "${SWIFT_BUILD_FLAGS:-}" ]]; then
     # 允许受限环境传入 --disable-sandbox 等 SwiftPM 构建参数；默认不改变本地打包行为。
     SWIFT_BUILD_FLAGS_ARRAY=(${SWIFT_BUILD_FLAGS})
