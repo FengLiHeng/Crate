@@ -335,6 +335,13 @@ private struct SideItem: View {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(active ? app.tokens.accentSoft : (hovering ? app.tokens.hover : .clear))
             )
+            .overlay(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(app.tokens.accent)
+                    .frame(width: 3, height: active ? 18 : 0)
+                    .padding(.leading, 3)
+                    .opacity(active ? 1 : 0)
+            }
             .scaleEffect(hovering && !active ? 1.006 : 1)
             .contentShape(Rectangle())
             .animation(MotionTokens.feedback, value: hovering)

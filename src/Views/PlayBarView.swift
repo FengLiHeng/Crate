@@ -26,10 +26,10 @@ struct PlayBarView: View {
                 if let album {
                     LinearGradient(
                         stops: [
-                            .init(color: album.playbarAmbient(theme: app.theme, hue: album.h1, alpha: app.theme == .dark ? 0.16 : 0.13), location: 0),
+                            .init(color: album.playbarAmbient(theme: app.theme, hue: album.h1, alpha: app.theme == .dark ? 0.16 : 0.07), location: 0),
                             .init(color: .clear, location: 0.34),
                             .init(color: .clear, location: 0.66),
-                            .init(color: album.playbarAmbient(theme: app.theme, hue: album.h2, alpha: app.theme == .dark ? 0.13 : 0.1), location: 1),
+                            .init(color: album.playbarAmbient(theme: app.theme, hue: album.h2, alpha: app.theme == .dark ? 0.13 : 0.055), location: 1),
                         ],
                         startPoint: .leading, endPoint: .trailing
                     )
