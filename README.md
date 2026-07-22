@@ -18,6 +18,7 @@ Crate 专注于让个人曲库重新变得好用：导入文件或文件夹后�
 
 ## 界面预览
 
+<!-- ui-screenshots:start -->
 | 浅色主题 | 深色主题 |
 | --- | --- |
 | ![Crate 浅色主题首页](docs/截图/浅色-首页.png) | ![Crate 深色主题首页](docs/截图/深色-首页.png) |
@@ -25,6 +26,15 @@ Crate 专注于让个人曲库重新变得好用：导入文件或文件夹后�
 | 待播清单 | 动态歌词 |
 | --- | --- |
 | ![Crate 浅色主题待播清单](docs/截图/浅色-待播清单.png) | ![Crate 浅色主题歌词页](docs/截图/浅色-歌词.png) |
+<!-- ui-screenshots:end -->
+
+完成 UI 调整后，可运行以下命令启动最新版应用、生成四个固定场景的截图，并更新上面的预览区块：
+
+```bash
+Scripts/update-screenshots.sh
+```
+
+首次运行时，macOS 可能会要求为终端或 Codex 授予“屏幕与系统音频录制”权限。
 
 ## 功能
 
@@ -85,6 +95,7 @@ src/
   Views/                  SwiftUI 页面与组件
 
 Scripts/bundle.sh         生成 build/Crate.app
+Scripts/update-screenshots.sh  自动生成 README 界面截图
 docs/截图/                README 界面截图
 docs/logo.png             README 与应用图标源图
 openspec/                 产品规格与变更记录

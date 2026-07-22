@@ -104,7 +104,11 @@ final class AppState {
 
     // ── 主题（持久化键与设计稿 localStorage 对齐） ──
     var theme: AppTheme {
-        didSet { UserDefaults.standard.set(theme.rawValue, forKey: "lmp-theme") }
+        didSet {
+            if persistenceEnabled {
+                UserDefaults.standard.set(theme.rawValue, forKey: "lmp-theme")
+            }
+        }
     }
     var tokens: ThemeTokens { ThemeTokens.of(theme) }
 
@@ -156,17 +160,23 @@ final class AppState {
     @ObservationIgnored nonisolated(unsafe) private var persistenceDrainScheduled = false
     @ObservationIgnored private var persistenceFailureReported = false
     @ObservationIgnored private var persistenceProtectionActive = false
+    @ObservationIgnored private let persistenceEnabled: Bool
     @ObservationIgnored nonisolated private let persistenceStoreURL: URL
 
-    init() {
+    init(screenshotScene: ScreenshotScene? = nil) {
+        persistenceEnabled = screenshotScene == nil
         let savedTheme = UserDefaults.standard.string(forKey: "lmp-theme")
-        theme = AppTheme(rawValue: savedTheme ?? "") ?? .light
+        theme = screenshotScene?.theme ?? AppTheme(rawValue: savedTheme ?? "") ?? .light
 
         let storeURL = Self.storeURL
         persistenceStoreURL = storeURL
         let hasPersistedLibrary = FileManager.default.fileExists(atPath: storeURL.path)
         var loadFailed = false
-        if hasPersistedLibrary {
+        if screenshotScene != nil {
+            albums = ScreenshotFixture.albums
+            library = ScreenshotFixture.songs
+            playlists = ScreenshotFixture.playlists
+        } else if hasPersistedLibrary {
             do {
                 let data = try Data(contentsOf: storeURL)
                 let persisted = try JSONDecoder().decode(PersistedLibrary.self, from: data)
@@ -190,25 +200,35 @@ final class AppState {
         // init 中赋值不触发 didSet，手动建一次索引
         albumsById = Dictionary(uniqueKeysWithValues: albums.map { ($0.id, $0) })
         songsById = Dictionary(uniqueKeysWithValues: library.map { ($0.id, $0) })
-        if loadFailed {
+        if screenshotScene != nil {
+            // 截图 fixture 仅存在于当前进程，不落盘。
+        } else if loadFailed {
             showToast("曲库读取失败，已暂时以空资料库启动")
         } else {
             persist()
         }
-        backfillSidecarArtwork()
+        if screenshotScene == nil {
+            backfillSidecarArtwork()
+        }
 
         player.songProvider = { [weak self] id in self?.songsById[id] }
         player.onToast = { [weak self] msg in self?.showToast(msg) }
         player.onMissing = { [weak self] id in self?.markMissing(id) }
-        player.configurePlaybackMemory(url: Self.playbackMemoryURL)
-        player.restorePlaybackMemory(availableSongs: songsById)
+        if let screenshotScene {
+            ScreenshotFixture.configurePlayback(in: self, for: screenshotScene)
+        } else {
+            player.configurePlaybackMemory(url: Self.playbackMemoryURL)
+            player.restorePlaybackMemory(availableSongs: songsById)
+        }
 
         // 启动后台批量探测失效曲目（design.md D2）
-        probeAvailability()
+        if screenshotScene == nil {
+            probeAvailability()
+        }
     }
 
     func flushPersistence() {
-        guard loaded else { return }
+        guard loaded, persistenceEnabled else { return }
         player.flushPlaybackMemory()
         guard !persistenceProtectionActive else { return }
         let snapshot = currentPersistenceSnapshot
@@ -1328,7 +1348,7 @@ final class AppState {
     }
 
     private func persist() {
-        guard loaded, !persistenceProtectionActive else { return }
+        guard loaded, persistenceEnabled, !persistenceProtectionActive else { return }
         schedulePersistence(currentPersistenceSnapshot)
     }
 
