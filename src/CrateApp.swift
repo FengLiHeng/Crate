@@ -4,7 +4,17 @@ import AppKit
 @main
 struct CrateApp: App {
     @NSApplicationDelegateAdaptor(CrateAppDelegate.self) private var appDelegate
-    @State private var app = AppState()
+    @State private var app: AppState
+    private let screenshotConfiguration: ScreenshotLaunchConfiguration?
+
+    init() {
+        let configuration = ScreenshotLaunchConfiguration.parse(arguments: ProcessInfo.processInfo.arguments)
+        screenshotConfiguration = configuration
+        if let configuration {
+            AppState.storeDirectoryOverride = configuration.storeDirectoryURL
+        }
+        _app = State(initialValue: AppState(screenshotScene: configuration?.scene))
+    }
 
     var body: some Scene {
         WindowGroup("Crate") {
@@ -14,6 +24,7 @@ struct CrateApp: App {
                 .preferredColorScheme(app.theme == .dark ? .dark : .light)
                 .onAppear {
                     appDelegate.bind(appState: app)
+                    ScreenshotWindowCoordinator.prepare(configuration: screenshotConfiguration)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     app.flushPersistence()
