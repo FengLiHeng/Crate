@@ -1,6 +1,7 @@
 import SwiftUI
 import Observation
 import AVFoundation
+import AppKit
 
 enum LibraryView: Hashable {
     case library
@@ -58,6 +59,10 @@ final class AppState {
     nonisolated private static let maxArtworkDataSize = 512 * 1024
     nonisolated private static let maxArtworkPixelLength = 640
 
+    private static var currentSystemColorScheme: ColorScheme {
+        NSApplication.shared.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light
+    }
+
     private struct ImportAlbumKey: Hashable, Sendable {
         var title: String
         var artist: String
@@ -102,14 +107,16 @@ final class AppState {
         var newURL: URL
     }
 
-    // ── 主题（持久化键与设计稿 localStorage 对齐） ──
-    var theme: AppTheme {
+    // ── 主题（用户选择的模式与实际渲染主题分离） ──
+    var themeMode: AppThemeMode {
         didSet {
+            theme = themeMode.resolvedTheme(systemColorScheme: Self.currentSystemColorScheme)
             if persistenceEnabled {
-                UserDefaults.standard.set(theme.rawValue, forKey: "lmp-theme")
+                UserDefaults.standard.set(themeMode.rawValue, forKey: "lmp-theme")
             }
         }
     }
+    private(set) var theme: AppTheme
     var tokens: ThemeTokens { ThemeTokens.of(theme) }
 
     // ── 数据（变更后持久化到 Application Support，design.md D6） ──
@@ -165,8 +172,16 @@ final class AppState {
 
     init(screenshotScene: ScreenshotScene? = nil) {
         persistenceEnabled = screenshotScene == nil
-        let savedTheme = UserDefaults.standard.string(forKey: "lmp-theme")
-        theme = screenshotScene?.theme ?? AppTheme(rawValue: savedTheme ?? "") ?? .light
+        let savedThemeMode = UserDefaults.standard.string(forKey: "lmp-theme")
+            .flatMap(AppThemeMode.init(rawValue:))
+        if let screenshotTheme = screenshotScene?.theme {
+            themeMode = screenshotTheme == .dark ? .dark : .light
+            theme = screenshotTheme
+        } else {
+            let initialThemeMode = savedThemeMode ?? .system
+            themeMode = initialThemeMode
+            theme = initialThemeMode.resolvedTheme(systemColorScheme: Self.currentSystemColorScheme)
+        }
 
         let storeURL = Self.storeURL
         persistenceStoreURL = storeURL
@@ -225,6 +240,11 @@ final class AppState {
         if screenshotScene == nil {
             probeAvailability()
         }
+    }
+
+    func updateSystemColorScheme(_ colorScheme: ColorScheme) {
+        guard themeMode == .system else { return }
+        theme = AppTheme(colorScheme: colorScheme)
     }
 
     func flushPersistence() {

@@ -38,6 +38,48 @@ func srgb(_ red: Double, _ green: Double, _ blue: Double, _ alpha: Double = 1) -
 
 enum AppTheme: String {
     case light, dark
+
+    init(colorScheme: ColorScheme) {
+        self = colorScheme == .dark ? .dark : .light
+    }
+}
+
+enum AppThemeMode: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .system: "系统"
+        case .light: "浅色"
+        case .dark: "深色"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon"
+        }
+    }
+
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
+    func resolvedTheme(systemColorScheme: ColorScheme) -> AppTheme {
+        switch self {
+        case .system: AppTheme(colorScheme: systemColorScheme)
+        case .light: .light
+        case .dark: .dark
+        }
+    }
 }
 
 struct ThemeTokens {
