@@ -18,14 +18,23 @@ struct CrateApp: App {
 
     var body: some Scene {
         WindowGroup("Crate") {
-            CrateRootView(
-                app: app,
-                appDelegate: appDelegate,
-                screenshotConfiguration: screenshotConfiguration
-            )
+            RootView()
+                .environment(app)
+                .frame(minWidth: 1000, minHeight: 540)
+                .preferredColorScheme(app.theme == .dark ? .dark : .light)
+                .onAppear {
+                    appDelegate.bind(appState: app)
+                    ScreenshotWindowCoordinator.prepare(configuration: screenshotConfiguration)
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    app.flushPersistence()
+                }
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1240, height: 760)
+        .defaultSize(
+            width: WindowMetrics.defaultContentWidth,
+            height: WindowMetrics.defaultContentHeight
+        )
         .commands {
             CommandGroup(after: .appInfo) {
                 Button("检查更新...") {
@@ -35,31 +44,5 @@ struct CrateApp: App {
                 .disabled(app.isUpdateBusy)
             }
         }
-    }
-}
-
-private struct CrateRootView: View {
-    let app: AppState
-    let appDelegate: CrateAppDelegate
-    let screenshotConfiguration: ScreenshotLaunchConfiguration?
-
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        RootView()
-            .environment(app)
-            .frame(minWidth: 1000, minHeight: 540)
-            .preferredColorScheme(app.themeMode.preferredColorScheme)
-            .onAppear {
-                app.updateSystemColorScheme(colorScheme)
-                appDelegate.bind(appState: app)
-                ScreenshotWindowCoordinator.prepare(configuration: screenshotConfiguration)
-            }
-            .onChange(of: colorScheme) { _, newColorScheme in
-                app.updateSystemColorScheme(newColorScheme)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-                app.flushPersistence()
-            }
     }
 }

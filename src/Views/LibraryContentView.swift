@@ -18,6 +18,7 @@ struct LibraryContentView: View {
 
 private struct ContentHeader: View {
     @Environment(AppState.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmClearLibrary = false
 
     var body: some View {
@@ -66,7 +67,14 @@ private struct ContentHeader: View {
                     } else {
                         ImportMenuButton()
                     }
-                    ThemeMenuButton()
+                    ToolButton(
+                        systemName: app.theme == .light ? "moon" : "sun.max",
+                        help: app.theme == .light ? "切换深色模式" : "切换浅色模式"
+                    ) {
+                        withAnimation(MotionTokens.page(reduceMotion: reduceMotion)) {
+                            app.theme = app.theme == .light ? .dark : .light
+                        }
+                    }
                     LibraryActionsMenuButton(
                         confirmClearLibrary: $confirmClearLibrary,
                         clearDisabled: app.library.isEmpty || app.importPhase.isImporting
@@ -195,47 +203,6 @@ private struct ToolButton: View {
         .onHover { hovering = $0 }
         .help(help)
         .pressEvents(onPress: { pressed = true }, onRelease: { pressed = false })
-    }
-}
-
-private struct ThemeMenuButton: View {
-    @Environment(AppState.self) private var app
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hovering = false
-
-    private var help: String {
-        "主题：\(app.themeMode.title)"
-    }
-
-    var body: some View {
-        Menu {
-            ForEach(AppThemeMode.allCases) { mode in
-                Button {
-                    guard mode != app.themeMode else { return }
-                    withAnimation(MotionTokens.page(reduceMotion: reduceMotion)) {
-                        app.themeMode = mode
-                    }
-                } label: {
-                    if mode == app.themeMode {
-                        Label(mode.title, systemImage: "checkmark")
-                    } else {
-                        Text(mode.title)
-                    }
-                }
-            }
-        } label: {
-            ToolButtonChrome(
-                systemName: app.themeMode.systemImage,
-                label: help,
-                hovering: hovering
-            )
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .onHover { hovering = $0 }
-        .help(help)
-        .accessibilityLabel(help)
     }
 }
 

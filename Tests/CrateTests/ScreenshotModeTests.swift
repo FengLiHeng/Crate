@@ -37,7 +37,6 @@ final class ScreenshotModeTests: XCTestCase {
         let app = AppState(screenshotScene: .lightQueue)
         app.flushPersistence()
 
-        XCTAssertEqual(app.themeMode, .light)
         XCTAssertEqual(app.theme, .light)
         XCTAssertEqual(app.library.count, SampleData.songs.count)
         XCTAssertTrue(app.queueOpen)

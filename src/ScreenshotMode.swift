@@ -157,7 +157,12 @@ enum ScreenshotWindowCoordinator {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             guard let window = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible }) else { return }
-            window.setContentSize(NSSize(width: 1240, height: 760))
+            window.setContentSize(
+                NSSize(
+                    width: WindowMetrics.defaultContentWidth,
+                    height: WindowMetrics.defaultContentHeight
+                )
+            )
             window.center()
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
