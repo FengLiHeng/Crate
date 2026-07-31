@@ -485,6 +485,28 @@ final class PlayerStore {
         onToast("已将「\(song.title)」添加到待播清单")
     }
 
+    func addToQueue(_ songs: [Song]) {
+        var pendingIds = Set(manualQueue)
+        pendingIds.formUnion(upcomingIds)
+        if let currentId {
+            pendingIds.insert(currentId)
+        }
+        var seenInput = Set<String>()
+        var addedCount = 0
+        for song in songs where seenInput.insert(song.id).inserted && !pendingIds.contains(song.id) {
+            removeFromUpcomingContext(song.id)
+            manualQueue.append(song.id)
+            pendingIds.insert(song.id)
+            addedCount += 1
+        }
+        guard addedCount > 0 else {
+            onToast("所选歌曲已在待播清单中")
+            return
+        }
+        savePlaybackMemorySoon()
+        onToast("已将 \(addedCount) 首歌曲添加到待播清单")
+    }
+
     func clearQueue() {
         manualQueue = []
         let keep = Array(ctx.ids.prefix(ctx.pos + 1))
@@ -522,6 +544,37 @@ final class PlayerStore {
         guard manualQueue.indices.contains(index) else { return }
         manualQueue.remove(at: index)
         savePlaybackMemorySoon()
+    }
+
+    /// 在插播分区内移动曲目；目标索引表示移动后的最终位置。
+    @discardableResult
+    func moveManualQueueItem(from sourceIndex: Int, to destinationIndex: Int) -> Bool {
+        guard manualQueue.indices.contains(sourceIndex),
+              manualQueue.indices.contains(destinationIndex),
+              sourceIndex != destinationIndex else { return false }
+        let id = manualQueue.remove(at: sourceIndex)
+        manualQueue.insert(id, at: destinationIndex)
+        savePlaybackMemorySoon()
+        return true
+    }
+
+    /// 在“接下来”分区内移动曲目，不改变当前曲目、上下文位置或播放进度。
+    /// 随机模式只更新当前有效顺序；普通模式同步新的原始顺序。
+    @discardableResult
+    func moveUpcomingItem(from sourceIndex: Int, to destinationIndex: Int) -> Bool {
+        let startIndex = max(0, min(ctx.pos + 1, ctx.ids.count))
+        let upcomingCount = ctx.ids.count - startIndex
+        guard (0..<upcomingCount).contains(sourceIndex),
+              (0..<upcomingCount).contains(destinationIndex),
+              sourceIndex != destinationIndex else { return false }
+
+        let id = ctx.ids.remove(at: startIndex + sourceIndex)
+        ctx.ids.insert(id, at: startIndex + destinationIndex)
+        if !shuffle {
+            ctx.originalIds = ctx.ids
+        }
+        savePlaybackMemorySoon()
+        return true
     }
 
     // MARK: - 删除歌曲时同步队列与上下文（handleMenuAction remove）

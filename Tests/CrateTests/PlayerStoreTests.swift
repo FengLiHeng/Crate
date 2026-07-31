@@ -94,6 +94,29 @@ final class PlayerStoreTests: XCTestCase {
         XCTAssertEqual(store.upcomingIds, [third.id])
     }
 
+    func testBatchAddToQueueKeepsExistingPendingOrderAndOnlyAppendsNewSongs() {
+        let current = Song(id: "current", title: "Current", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let upcoming = Song(id: "upcoming", title: "Upcoming", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let manual = Song(id: "manual", title: "Manual", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let firstNew = Song(id: "new-1", title: "New 1", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let secondNew = Song(id: "new-2", title: "New 2", artist: nil, albumId: nil, duration: 10, fileURL: nil)
+        let songs = Dictionary(
+            uniqueKeysWithValues: [current, upcoming, manual, firstNew, secondNew].map { ($0.id, $0) }
+        )
+        let store = PlayerStore()
+        store.songProvider = { songs[$0] }
+        var toasts: [String] = []
+        store.onToast = { toasts.append($0) }
+        store.playFrom([current, upcoming], index: 0)
+        store.playNextSong(manual)
+
+        store.addToQueue([upcoming, manual, firstNew, current, secondNew, firstNew])
+
+        XCTAssertEqual(store.manualQueue, [manual.id, firstNew.id, secondNew.id])
+        XCTAssertEqual(store.upcomingIds, [upcoming.id])
+        XCTAssertEqual(toasts.last, "已将 2 首歌曲添加到待播清单")
+    }
+
     func testPendingEngineDoesNotAttachAfterStop() throws {
         let tempDir = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: tempDir) }
@@ -299,6 +322,124 @@ final class PlayerStoreTests: XCTestCase {
         XCTAssertEqual(store.currentId, b2.id)
         XCTAssertEqual(store.ctx.ids, [b2.id, b3.id, b1.id])
         XCTAssertTrue(store.manualQueue.isEmpty)
+    }
+
+    func testMoveManualQueueItemUpdatesPlaybackOrderAndRejectsInvalidIndices() {
+        let current = Song(id: "current", title: "Current", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        let first = Song(id: "first", title: "First", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        let second = Song(id: "second", title: "Second", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        let third = Song(id: "third", title: "Third", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        let songs = Dictionary(uniqueKeysWithValues: [current, first, second, third].map { ($0.id, $0) })
+        let store = PlayerStore()
+        store.songProvider = { songs[$0] }
+
+        store.playFrom([current], index: 0)
+        store.seek(to: 6)
+        store.addToQueue(first)
+        store.addToQueue(second)
+        store.addToQueue(third)
+
+        XCTAssertTrue(store.moveManualQueueItem(from: 2, to: 0))
+        XCTAssertEqual(store.manualQueue, [third.id, first.id, second.id])
+        XCTAssertEqual(store.currentId, current.id)
+        XCTAssertEqual(store.progress, 6)
+
+        XCTAssertFalse(store.moveManualQueueItem(from: -1, to: 0))
+        XCTAssertFalse(store.moveManualQueueItem(from: 0, to: 3))
+        XCTAssertFalse(store.moveManualQueueItem(from: 1, to: 1))
+        XCTAssertEqual(store.manualQueue, [third.id, first.id, second.id])
+
+        store.next()
+        XCTAssertEqual(store.currentId, third.id)
+        XCTAssertTrue(store.isManual)
+    }
+
+    func testMoveUpcomingItemPreservesCurrentPlaybackAndUpdatesNormalOrder() {
+        let first = Song(id: "first", title: "First", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        let second = Song(id: "second", title: "Second", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        let third = Song(id: "third", title: "Third", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        let fourth = Song(id: "fourth", title: "Fourth", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        let songs = Dictionary(uniqueKeysWithValues: [first, second, third, fourth].map { ($0.id, $0) })
+        let store = PlayerStore()
+        store.songProvider = { songs[$0] }
+
+        store.playFrom([first, second, third, fourth], index: 0)
+        store.seek(to: 7)
+
+        XCTAssertTrue(store.moveUpcomingItem(from: 2, to: 0))
+        XCTAssertEqual(store.ctx.ids, [first.id, fourth.id, second.id, third.id])
+        XCTAssertEqual(store.ctx.originalIds, store.ctx.ids)
+        XCTAssertEqual(store.ctx.pos, 0)
+        XCTAssertEqual(store.currentId, first.id)
+        XCTAssertEqual(store.progress, 7)
+
+        XCTAssertFalse(store.moveUpcomingItem(from: -1, to: 0))
+        XCTAssertFalse(store.moveUpcomingItem(from: 0, to: 3))
+        XCTAssertFalse(store.moveUpcomingItem(from: 1, to: 1))
+        XCTAssertEqual(store.ctx.ids, [first.id, fourth.id, second.id, third.id])
+
+        store.next()
+        XCTAssertEqual(store.currentId, fourth.id)
+        XCTAssertFalse(store.isManual)
+    }
+
+    func testMoveUpcomingItemInShuffleOnlyChangesEffectiveOrder() {
+        let songs = (0..<5).map {
+            Song(id: "song-\($0)", title: "Song \($0)", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        }
+        let songsById = Dictionary(uniqueKeysWithValues: songs.map { ($0.id, $0) })
+        let store = PlayerStore()
+        store.songProvider = { songsById[$0] }
+
+        store.playFrom(songs, index: 2)
+        store.toggleShuffle()
+        let originalIds = store.ctx.originalIds
+        let effectiveIds = store.ctx.ids
+        let currentId = store.currentId
+
+        XCTAssertTrue(store.moveUpcomingItem(from: 0, to: 3))
+        XCTAssertNotEqual(store.ctx.ids, effectiveIds)
+        XCTAssertEqual(store.ctx.originalIds, originalIds)
+        XCTAssertEqual(store.currentId, currentId)
+        XCTAssertEqual(store.ctx.pos, 0)
+
+        store.toggleShuffle()
+        XCTAssertFalse(store.shuffle)
+        XCTAssertEqual(store.ctx.ids, originalIds)
+        XCTAssertEqual(store.currentId, currentId)
+        XCTAssertEqual(store.ctx.pos, originalIds.firstIndex(of: currentId!)!)
+    }
+
+    func testReorderedQueuesRestoreFromPlaybackMemory() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let memoryURL = tempDir.appendingPathComponent("playback.json")
+        let current = Song(id: "current", title: "Current", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        let upcomingFirst = Song(id: "upcoming-first", title: "Upcoming First", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        let upcomingSecond = Song(id: "upcoming-second", title: "Upcoming Second", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        let manualFirst = Song(id: "manual-first", title: "Manual First", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        let manualSecond = Song(id: "manual-second", title: "Manual Second", artist: nil, albumId: nil, duration: 20, fileURL: nil)
+        let songs = [current, upcomingFirst, upcomingSecond, manualFirst, manualSecond]
+        let songsById = Dictionary(uniqueKeysWithValues: songs.map { ($0.id, $0) })
+
+        let source = PlayerStore()
+        source.songProvider = { songsById[$0] }
+        source.configurePlaybackMemory(url: memoryURL)
+        source.playFrom([current, upcomingFirst, upcomingSecond], index: 0)
+        source.addToQueue(manualFirst)
+        source.addToQueue(manualSecond)
+        XCTAssertTrue(source.moveManualQueueItem(from: 1, to: 0))
+        XCTAssertTrue(source.moveUpcomingItem(from: 1, to: 0))
+        source.flushPlaybackMemory()
+
+        let restored = PlayerStore()
+        restored.songProvider = { songsById[$0] }
+        restored.configurePlaybackMemory(url: memoryURL)
+        restored.restorePlaybackMemory(availableSongs: songsById)
+
+        XCTAssertEqual(restored.currentId, current.id)
+        XCTAssertEqual(restored.manualQueue, [manualSecond.id, manualFirst.id])
+        XCTAssertEqual(restored.upcomingIds, [upcomingSecond.id, upcomingFirst.id])
     }
 }
 

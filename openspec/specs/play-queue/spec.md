@@ -92,3 +92,59 @@ The app SHALL expose play and remove actions for applicable queue rows without r
 #### Scenario: Keyboard or VoiceOver removes a manual queue item
 - **WHEN** a removable manual queue row is not pointer-hovered and the user invokes its remove control or named Remove action
 - **THEN** the item is removed from the manual queue
+
+### Requirement: 批量加入待播清单
+应用 SHALL 允许用户将当前选择的多首歌曲按当前可见顺序加入待播清单。批量操作 SHALL 保持现有待播内容的相对顺序，并 MUST 避免歌曲在插播队列或后续上下文中重复出现。
+
+#### Scenario: 多首歌曲加入待播
+- **WHEN** 用户选择多首歌曲并执行“加入待播清单”
+- **THEN** 所选歌曲按当前可见顺序追加到待播清单，既有待播歌曲相对顺序保持不变
+
+#### Scenario: 批量加入时去重
+- **WHEN** 所选歌曲中的一首已存在于插播队列或后续上下文
+- **THEN** 该歌曲在最终待播清单中只出现一次，其他所选歌曲仍按顺序加入
+
+### Requirement: 待播分区支持重新排序
+应用 SHALL 允许用户在“插播 · 下一首播放”和“接下来”分区内拖动曲目重新排序，队列行 SHALL 显示清晰的拖动手柄，并以稳定动画反馈顺序变化。拖动预览 SHALL 使用尺寸稳定且内容清晰的不透明视觉，原列表位置 SHALL 只保留不重复歌曲内容的占位反馈，MUST NOT 因预览与原行叠加产生文字、封面或背景残影。跨分区拖动 MAY 被拒绝。排序后实际下一首播放顺序 SHALL 立即更新，并 SHALL 通过现有播放记忆持久化。排序操作 MUST NOT 改变当前曲目、当前播放上下文位置或播放进度。
+
+#### Scenario: 调整插播顺序
+- **WHEN** 用户将插播分区中的一首曲目拖到同分区另一位置
+- **THEN** 插播分区与实际插播播放顺序立即按新顺序更新，当前播放保持不变
+
+#### Scenario: 调整接下来顺序
+- **WHEN** 用户将“接下来”分区中的一首曲目拖到同分区另一位置
+- **THEN** 上下文后续曲目与实际后续播放顺序立即按新顺序更新，当前曲目、上下文位置和播放进度保持不变
+
+#### Scenario: 拖动预览不产生残影
+- **WHEN** 用户长按并拖动任一可排序队列行经过其他目标位置
+- **THEN** 指针附近只显示一个紧凑且不透明的歌曲预览，列表中的拖动行仅显示稳定占位，不重复显示歌曲文字或封面
+
+#### Scenario: 取消拖动后恢复原行
+- **WHEN** 用户开始拖动队列行后在无效目标或非队列区域释放鼠标
+- **THEN** 应用取消排序并立即清除拖动占位，原歌曲行恢复正常显示
+
+#### Scenario: 拒绝无效移动
+- **WHEN** 移动请求包含越界索引、相同索引或跨分区目标
+- **THEN** 队列顺序和当前播放状态保持不变，应用不会崩溃
+
+#### Scenario: 重启后恢复调整顺序
+- **WHEN** 用户调整待播顺序、播放记忆完成保存并重启应用
+- **THEN** 待播清单恢复为调整后的顺序
+
+### Requirement: 队列排序支持辅助技术
+应用 SHALL 为可排序的队列行提供命名的“上移”和“下移”无障碍动作，并 SHALL 仅在对应方向存在有效目标时暴露或执行该动作。无障碍移动 SHALL 与指针拖动使用相同的队列排序语义。
+
+#### Scenario: VoiceOver 调整队列顺序
+- **WHEN** VoiceOver 用户聚焦可排序队列行并调用“上移”或“下移”
+- **THEN** 曲目在当前分区内移动一个位置，实际播放顺序同步更新
+
+#### Scenario: 在分区边界调用移动
+- **WHEN** 用户尝试将分区第一项上移或将最后一项下移
+- **THEN** 队列顺序保持不变且应用不会崩溃
+
+### Requirement: 随机模式保留原始顺序
+随机模式下调整“接下来”分区 SHALL 只改变当前随机播放的有效顺序，MUST NOT 改写 `originalIds`；关闭随机模式后 SHALL 恢复调整前由 `originalIds` 记录的原始顺序，并将上下文位置对齐当前曲目。
+
+#### Scenario: 随机模式调整后关闭随机
+- **WHEN** 用户在随机模式中调整后续曲目顺序后关闭随机模式
+- **THEN** 当前随机顺序曾立即生效，但关闭随机后上下文恢复为既有原始顺序且当前曲目保持不变

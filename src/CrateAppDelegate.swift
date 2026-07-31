@@ -3,9 +3,17 @@ import AppKit
 @MainActor
 final class CrateAppDelegate: NSObject, NSApplicationDelegate {
     private weak var appState: AppState?
+    private var systemMediaControls: SystemMediaControls?
 
     func bind(appState: AppState) {
+        systemMediaControls?.stop()
         self.appState = appState
+        systemMediaControls = SystemMediaControls(appState: appState)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        systemMediaControls?.stop()
+        systemMediaControls = nil
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
