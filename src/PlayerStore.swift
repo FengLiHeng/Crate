@@ -63,6 +63,7 @@ final class PlayerStore {
     var repeatMode: RepeatMode = .off
     var manualQueue: [String] = []
     var ctx = Context()
+    private(set) var recentlyPrioritizedId: String?
 
     // 由 AppState 注入
     @ObservationIgnored var songProvider: @MainActor (String) -> Song? = { _ in nil }
@@ -82,6 +83,7 @@ final class PlayerStore {
     @ObservationIgnored private let playbackMemoryQueue = DispatchQueue(label: "com.crate.playback-memory", qos: .utility)
     @ObservationIgnored private var playbackMemorySaveScheduled = false
     @ObservationIgnored private var lastPlaybackMemorySaveAt = Date.distantPast
+    @ObservationIgnored private var playNextFeedbackTask: Task<Void, Never>?
     /// 本轮跳过已尝试过的曲目 id；候选再次出现说明绕了一圈，全库不可播（design.md D4）
     @ObservationIgnored private var skipVisited: Set<String> = []
     /// 播放代次：异步构造引擎期间用户若已切歌，旧构造结果按代次作废（design.md D5）
@@ -241,6 +243,7 @@ final class PlayerStore {
         isPlaying = false
         isLoading = false
         progress = 0
+        clearPlayNextFeedback()
         manualQueue = []
         ctx = Context()
         skipVisited.removeAll()
@@ -265,6 +268,7 @@ final class PlayerStore {
         let ids = Self.uniqueIds(list.map(\.id))
         guard !ids.isEmpty else { return }
         skipVisited.removeAll()
+        clearPlayNextFeedback()
         manualQueue = []
         let useShuffle = forceShuffle || shuffle
         if forceShuffle {
@@ -474,6 +478,7 @@ final class PlayerStore {
     func playNextSong(_ song: Song) {
         guard prepareManualInsertion(of: song) else { return }
         manualQueue.insert(song.id, at: 0)
+        showPlayNextFeedback(for: song.id)
         savePlaybackMemorySoon()
         onToast("「\(song.title)」将在下一首播放")
     }
@@ -485,7 +490,30 @@ final class PlayerStore {
         onToast("已将「\(song.title)」添加到待播清单")
     }
 
+    func addToQueue(_ songs: [Song]) {
+        var pendingIds = Set(manualQueue)
+        pendingIds.formUnion(upcomingIds)
+        if let currentId {
+            pendingIds.insert(currentId)
+        }
+        var seenInput = Set<String>()
+        var addedCount = 0
+        for song in songs where seenInput.insert(song.id).inserted && !pendingIds.contains(song.id) {
+            removeFromUpcomingContext(song.id)
+            manualQueue.append(song.id)
+            pendingIds.insert(song.id)
+            addedCount += 1
+        }
+        guard addedCount > 0 else {
+            onToast("所选歌曲已在待播清单中")
+            return
+        }
+        savePlaybackMemorySoon()
+        onToast("已将 \(addedCount) 首歌曲添加到待播清单")
+    }
+
     func clearQueue() {
+        clearPlayNextFeedback()
         manualQueue = []
         let keep = Array(ctx.ids.prefix(ctx.pos + 1))
         ctx.ids = keep
@@ -496,6 +524,7 @@ final class PlayerStore {
 
     func resetPlaybackSession() {
         stopPlayback()
+        clearPlayNextFeedback()
         manualQueue = []
         ctx = Context()
         isManual = false
@@ -524,6 +553,37 @@ final class PlayerStore {
         savePlaybackMemorySoon()
     }
 
+    /// 在插播分区内移动曲目；目标索引表示移动后的最终位置。
+    @discardableResult
+    func moveManualQueueItem(from sourceIndex: Int, to destinationIndex: Int) -> Bool {
+        guard manualQueue.indices.contains(sourceIndex),
+              manualQueue.indices.contains(destinationIndex),
+              sourceIndex != destinationIndex else { return false }
+        let id = manualQueue.remove(at: sourceIndex)
+        manualQueue.insert(id, at: destinationIndex)
+        savePlaybackMemorySoon()
+        return true
+    }
+
+    /// 在“接下来”分区内移动曲目，不改变当前曲目、上下文位置或播放进度。
+    /// 随机模式只更新当前有效顺序；普通模式同步新的原始顺序。
+    @discardableResult
+    func moveUpcomingItem(from sourceIndex: Int, to destinationIndex: Int) -> Bool {
+        let startIndex = max(0, min(ctx.pos + 1, ctx.ids.count))
+        let upcomingCount = ctx.ids.count - startIndex
+        guard (0..<upcomingCount).contains(sourceIndex),
+              (0..<upcomingCount).contains(destinationIndex),
+              sourceIndex != destinationIndex else { return false }
+
+        let id = ctx.ids.remove(at: startIndex + sourceIndex)
+        ctx.ids.insert(id, at: startIndex + destinationIndex)
+        if !shuffle {
+            ctx.originalIds = ctx.ids
+        }
+        savePlaybackMemorySoon()
+        return true
+    }
+
     // MARK: - 删除歌曲时同步队列与上下文（handleMenuAction remove）
 
     func handleSongRemoved(_ songId: String) {
@@ -546,6 +606,27 @@ final class PlayerStore {
     private static func uniqueIds(_ ids: [String]) -> [String] {
         var seen = Set<String>()
         return ids.filter { seen.insert($0).inserted }
+    }
+
+    private func showPlayNextFeedback(for songId: String) {
+        playNextFeedbackTask?.cancel()
+        recentlyPrioritizedId = songId
+        playNextFeedbackTask = Task { @MainActor [weak self] in
+            do {
+                try await Task<Never, Never>.sleep(nanoseconds: 1_400_000_000)
+            } catch {
+                return
+            }
+            guard self?.recentlyPrioritizedId == songId else { return }
+            self?.recentlyPrioritizedId = nil
+            self?.playNextFeedbackTask = nil
+        }
+    }
+
+    private func clearPlayNextFeedback() {
+        playNextFeedbackTask?.cancel()
+        playNextFeedbackTask = nil
+        recentlyPrioritizedId = nil
     }
 
     private func prepareManualInsertion(of song: Song) -> Bool {

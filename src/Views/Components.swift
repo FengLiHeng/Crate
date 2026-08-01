@@ -2,6 +2,28 @@ import SwiftUI
 import AppKit
 
 @MainActor
+final class MouseDragReleaseMonitor {
+    private var timer: Timer?
+
+    func start(onRelease: @escaping @MainActor @Sendable () -> Void) {
+        stop()
+        let timer = Timer(timeInterval: 0.05, repeats: true) { _ in
+            guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
+            Task { @MainActor in
+                onRelease()
+            }
+        }
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+}
+
+@MainActor
 private final class ArtworkImageCache {
     static let shared = ArtworkImageCache()
 

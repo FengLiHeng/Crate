@@ -104,7 +104,7 @@ private struct NativeSongTableView: NSViewRepresentable {
         scrollView.hasHorizontalScroller = false
         scrollView.borderType = .noBorder
 
-        let tableView = NSTableView()
+        let tableView = SongNSTableView()
         tableView.headerView = nil
         tableView.backgroundColor = .clear
         tableView.selectionHighlightStyle = .none
@@ -113,12 +113,17 @@ private struct NativeSongTableView: NSViewRepresentable {
         tableView.style = .plain
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.allowsEmptySelection = true
-        tableView.allowsMultipleSelection = false
+        tableView.allowsMultipleSelection = true
         tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         tableView.dataSource = context.coordinator
         tableView.delegate = context.coordinator
         tableView.target = context.coordinator
         tableView.doubleAction = #selector(Coordinator.doubleClicked(_:))
+        tableView.setDraggingSourceOperationMask(.copy, forLocal: true)
+        tableView.setDraggingSourceOperationMask(.copy, forLocal: false)
+        tableView.onContextMenuRow = { [weak coordinator = context.coordinator] row in
+            coordinator?.prepareContextMenu(for: row)
+        }
 
         let column = NSTableColumn(identifier: Coordinator.columnIdentifier)
         column.resizingMask = .autoresizingMask
@@ -156,6 +161,7 @@ private struct NativeSongTableView: NSViewRepresentable {
         private var cols = ColumnWidths(total: 0)
         private var songIds: [String] = []
         private var lastColumnWidth: CGFloat = 0
+        private var syncingSelection = false
 
         func update(
             app: AppState,
@@ -185,6 +191,7 @@ private struct NativeSongTableView: NSViewRepresentable {
             } else {
                 refreshVisibleRows()
             }
+            syncTableSelection()
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int {
@@ -204,14 +211,48 @@ private struct NativeSongTableView: NSViewRepresentable {
         }
 
         func tableViewSelectionDidChange(_ notification: Notification) {
-            guard let tableView, tableView.selectedRow >= 0, songs.indices.contains(tableView.selectedRow) else { return }
-            app?.selectedId = songs[tableView.selectedRow].id
+            guard !syncingSelection, let tableView, let app else { return }
+            let ids = Set(tableView.selectedRowIndexes.compactMap { row in
+                songs.indices.contains(row) ? songs[row].id : nil
+            })
+            app.setSongSelection(ids)
+        }
+
+        func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
+            guard songs.indices.contains(row) else { return nil }
+            let selectedRows = tableView.selectedRowIndexes.contains(row)
+                ? tableView.selectedRowIndexes
+                : IndexSet(integer: row)
+            let ids = selectedRows.compactMap { songs.indices.contains($0) ? songs[$0].id : nil }
+            guard let data = try? JSONEncoder().encode(ids) else { return nil }
+            let item = NSPasteboardItem()
+            item.setData(
+                data,
+                forType: NSPasteboard.PasteboardType(SongDragPayload.contentType.identifier)
+            )
+            return item
         }
 
         @objc func doubleClicked(_ sender: NSTableView) {
             let row = sender.clickedRow >= 0 ? sender.clickedRow : sender.selectedRow
             guard songs.indices.contains(row), let app else { return }
             play(song: songs[row], app: app)
+        }
+
+        func prepareContextMenu(for row: Int) {
+            guard let tableView, songs.indices.contains(row) else { return }
+            if !tableView.selectedRowIndexes.contains(row) {
+                tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            }
+        }
+
+        private func syncTableSelection() {
+            guard let tableView, let app else { return }
+            let indexes = IndexSet(songs.indices.filter { app.selectedSongIds.contains(songs[$0].id) })
+            guard indexes != tableView.selectedRowIndexes else { return }
+            syncingSelection = true
+            tableView.selectRowIndexes(indexes, byExtendingSelection: false)
+            syncingSelection = false
         }
 
         private func refreshVisibleRows() {
@@ -264,6 +305,20 @@ private final class SongTableScrollView: NSScrollView {
 }
 
 @MainActor
+private final class SongNSTableView: NSTableView {
+    var onContextMenuRow: ((Int) -> Void)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        let targetRow = row(at: point)
+        if targetRow >= 0 {
+            onContextMenuRow?(targetRow)
+        }
+        return super.menu(for: event)
+    }
+}
+
+@MainActor
 private final class SongHostingCell: NSTableCellView {
     private var hostingView: NSHostingView<AnyView>?
 
@@ -299,9 +354,12 @@ private struct TableHeader: View {
     var body: some View {
         HStack(spacing: 12) {
             Text("#").frame(width: 44)
-            Text("标题").frame(width: cols.title, alignment: .leading)
-            Text("艺术家").frame(width: cols.artist, alignment: .leading)
-            Text("专辑").frame(width: cols.album, alignment: .leading)
+            SortableColumnHeader(field: .title)
+                .frame(width: cols.title, alignment: .leading)
+            SortableColumnHeader(field: .artist)
+                .frame(width: cols.artist, alignment: .leading)
+            SortableColumnHeader(field: .album)
+                .frame(width: cols.album, alignment: .leading)
             Spacer().frame(width: 40)
         }
         .font(.system(size: 11.5, weight: .semibold))
@@ -316,6 +374,30 @@ private struct TableHeader: View {
     }
 }
 
+private struct SortableColumnHeader: View {
+    var field: LibrarySortField
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        Button {
+            app.setLibrarySort(field)
+        } label: {
+            HStack(spacing: 4) {
+                Text(field.title)
+                if app.librarySortField == field {
+                    Image(systemName: app.librarySortDirection.systemImage)
+                        .font(.system(size: 8, weight: .bold))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(app.librarySortField == field
+            ? "按\(field.title)\(app.librarySortDirection == .ascending ? "降序" : "升序")"
+            : "按\(field.title)排序")
+    }
+}
+
 private struct SongRow: View {
     var song: Song
     var index: Int
@@ -327,7 +409,7 @@ private struct SongRow: View {
     @State private var hovering = false
 
     private var isCurrent: Bool { song.id == app.player.currentId }
-    private var isSelected: Bool { song.id == app.selectedId }
+    private var isSelected: Bool { app.selectedSongIds.contains(song.id) }
     private var isMissing: Bool { app.missingIds.contains(song.id) }
 
     var body: some View {
@@ -416,8 +498,6 @@ private struct SongRow: View {
         )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .gesture(TapGesture(count: 2).onEnded { onPlay() })
-        .simultaneousGesture(TapGesture(count: 1).onEnded { app.selectedId = song.id })
         .contextMenu { SongContextMenu(song: song) }
         .animation(MotionTokens.feedback, value: hovering)
         .animation(MotionTokens.feedback, value: isSelected)
@@ -431,38 +511,65 @@ private struct SongContextMenu: View {
     var song: Song
     @Environment(AppState.self) private var app
 
+    private var targetSongs: [Song] {
+        if app.selectedSongIds.contains(song.id) {
+            let selected = app.selectedVisibleSongs
+            if !selected.isEmpty { return selected }
+        }
+        return [song]
+    }
+
+    private var targetSongIds: [String] {
+        targetSongs.map(\.id)
+    }
+
     private var addablePlaylists: [Playlist] {
         app.playlists.filter { playlist in
             !app.isSystemGroup(playlist)
                 && app.viewPlaylist?.id != playlist.id
-                && !playlist.songIds.contains(song.id)
+                && targetSongIds.contains { !playlist.songIds.contains($0) }
         }
     }
 
     var body: some View {
-        Button("立即播放") { app.player.playSongNow(song) }
-        Button("下一首播放") { app.player.playNextSong(song) }
-        Button("加入待播清单") { app.player.addToQueue(song) }
+        if targetSongs.count == 1 {
+            Button("立即播放") { app.player.playSongNow(song) }
+            Button("下一首播放") { app.player.playNextSong(song) }
+        }
+        Button(targetSongs.count > 1 ? "加入待播清单（\(targetSongs.count) 首）" : "加入待播清单") {
+            app.addSongsToQueue(targetSongIds)
+        }
         Divider()
+        if targetSongs.count > 1 {
+            Button("收藏所选歌曲") { app.setFavorite(true, songIds: targetSongIds) }
+            Button("取消收藏所选歌曲") { app.setFavorite(false, songIds: targetSongIds) }
+            Divider()
+        }
         if !addablePlaylists.isEmpty {
             Menu("添加到分组") {
                 ForEach(addablePlaylists) { pl in
-                    Button(pl.name) { app.addSong(song, to: pl) }
+                    Button(pl.name) { app.addSongs(targetSongIds, toGroupId: pl.id) }
                 }
             }
             Divider()
         }
-        if app.missingIds.contains(song.id) {
-            Button("重新定位…") { app.relocate(song) }
+        if targetSongs.count == 1 {
+            if app.missingIds.contains(song.id) {
+                Button("重新定位…") { app.relocate(song) }
+            }
+            Button("在 Finder 中显示") { app.revealInFinder(song) }
+            if song.fileURL != nil {
+                Button("移到废纸篓并移除记录…", role: .destructive) { app.deleteLocalFile(for: song) }
+            }
         }
-        Button("在 Finder 中显示") { app.revealInFinder(song) }
-        if song.fileURL != nil {
-            Button("移到废纸篓并移除记录…", role: .destructive) { app.deleteLocalFile(for: song) }
-        }
-        if let playlist = app.viewPlaylist {
-            Button("从此分组移除", role: .destructive) { app.removeSong(song, from: playlist) }
+        if app.viewPlaylist != nil {
+            Button(targetSongs.count > 1 ? "从此分组移除（\(targetSongs.count) 首）" : "从此分组移除", role: .destructive) {
+                app.requestRemoval(of: targetSongIds)
+            }
         } else {
-            Button("仅从资料库移除", role: .destructive) { app.removeSong(song) }
+            Button(targetSongs.count > 1 ? "仅从资料库移除（\(targetSongs.count) 首）" : "仅从资料库移除", role: .destructive) {
+                app.requestRemoval(of: targetSongIds)
+            }
         }
     }
 }

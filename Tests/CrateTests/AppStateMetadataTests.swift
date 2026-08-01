@@ -73,10 +73,12 @@ final class AppStateMetadataTests: XCTestCase {
 
         XCTAssertEqual(app.library.first?.title, "月光")
         XCTAssertEqual(app.library.first?.artist, "徐良&阿悄")
+        XCTAssertTrue(app.musicFolders.isEmpty)
         let persisted = try JSONSerialization.jsonObject(with: Data(contentsOf: tempDir.appendingPathComponent("library.json"))) as? [String: Any]
         let songs = persisted?["songs"] as? [[String: Any]]
         XCTAssertEqual(songs?.first?["title"] as? String, "月光")
         XCTAssertEqual(songs?.first?["artist"] as? String, "徐良&阿悄")
+        XCTAssertNotNil(persisted?["musicFolders"] as? [[String: Any]])
     }
 }
 

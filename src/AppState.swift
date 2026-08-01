@@ -11,6 +11,43 @@ enum RepeatMode: String, Codable {
     case off, all, one
 }
 
+enum LibrarySortField: String, CaseIterable, Identifiable {
+    case title
+    case artist
+    case album
+    case dateAdded
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .title: return "标题"
+        case .artist: return "艺术家"
+        case .album: return "专辑"
+        case .dateAdded: return "添加时间"
+        }
+    }
+}
+
+enum LibrarySortDirection {
+    case ascending
+    case descending
+
+    var title: String {
+        switch self {
+        case .ascending: return "升序"
+        case .descending: return "降序"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .ascending: return "arrow.up"
+        case .descending: return "arrow.down"
+        }
+    }
+}
+
 enum GroupNameValidation {
     static let maxLength = 24
 }
@@ -40,10 +77,40 @@ enum ImportPhase: Equatable, Sendable {
     }
 }
 
+enum LibraryActivityKind: Equatable, Sendable {
+    case importing
+    case scanning
+
+    var progressTitle: String {
+        switch self {
+        case .importing: return "正在导入"
+        case .scanning: return "正在扫描"
+        }
+    }
+
+    var cancellationMessage: String {
+        switch self {
+        case .importing: return "已取消音乐导入"
+        case .scanning: return "已取消音乐文件夹扫描"
+        }
+    }
+}
+
 struct LyricsPageState: Equatable {
     var songId: String
     var lyricsURL: URL
     var lyrics: ParsedLyrics
+}
+
+struct PendingSongRemoval: Identifiable {
+    enum Scope {
+        case library
+        case playlist(id: String, name: String)
+    }
+
+    let id = UUID()
+    var songIds: [String]
+    var scope: Scope
 }
 
 @MainActor
@@ -66,6 +133,7 @@ final class AppState {
     struct AlbumArtworkUpdate: Sendable {
         var albumId: String
         var artworkData: Data
+        var replacesExisting = false
     }
 
     struct ImportResult: Sendable {
@@ -83,6 +151,18 @@ final class AppState {
         var duration: Double
         var embeddedArtworkData: Data?
         var sidecarArtworkData: Data?
+    }
+
+    private struct FolderScanResult: Sendable {
+        var songs: [Song] = []
+        var newAlbums: [Album] = []
+        var albumArtworkUpdates: [AlbumArtworkUpdate] = []
+        var successfulSources: [MusicFolderSource] = []
+        var failedSourceNames: [String] = []
+        var skippedBroken = 0
+        var addedCount = 0
+        var movedCount = 0
+        var refreshedCount = 0
     }
 
     struct FilenameMetadata: Equatable, Sendable {
@@ -126,15 +206,30 @@ final class AppState {
         }
     }
     var playlists: [Playlist] { didSet { persist() } }
+    var musicFolders: [MusicFolderSource] { didSet { persist() } }
 
     // 索引缓存：随数据变更重建，避免每次渲染/查询全量建字典
     private(set) var albumsById: [String: Album] = [:]
     private(set) var songsById: [String: Song] = [:]
 
     // ── 视图状态 ──
-    var view: LibraryView = .library
-    var search = ""
+    var view: LibraryView = .library {
+        didSet {
+            guard view != oldValue else { return }
+            clearSongSelection()
+        }
+    }
+    var search = "" {
+        didSet {
+            guard search != oldValue else { return }
+            setSongSelection(selectedSongIds)
+        }
+    }
     var selectedId: String?
+    var selectedSongIds: Set<String> = []
+    var librarySortField: LibrarySortField = .title
+    var librarySortDirection: LibrarySortDirection = .ascending
+    var pendingSongRemoval: PendingSongRemoval?
     private(set) var queueOpen = false
     var toast: String?
     var dragOver = false
@@ -143,6 +238,12 @@ final class AppState {
     var availableUpdate: AvailableAppUpdate?
     var updateDialogPresented = false
     private(set) var importPhase: ImportPhase = .idle
+    private(set) var libraryActivityKind: LibraryActivityKind = .importing
+
+    var libraryActivityMessage: String? {
+        guard case .processing(let completed, let total) = importPhase else { return nil }
+        return "\(libraryActivityKind.progressTitle) \(completed)/\(total)"
+    }
 
     // ── 失效曲目（运行时派生，不持久化；design.md D1） ──
     var missingIds: Set<String> = []
@@ -153,6 +254,7 @@ final class AppState {
     @ObservationIgnored private var toastTask: Task<Void, Never>?
     @ObservationIgnored private var importTask: Task<Void, Never>?
     @ObservationIgnored private var importWorkerTask: Task<ImportResult, Never>?
+    @ObservationIgnored private var folderScanWorkerTask: Task<FolderScanResult, Never>?
     @ObservationIgnored private var loaded = false
     @ObservationIgnored nonisolated private let persistenceLock = NSLock()
     @ObservationIgnored nonisolated(unsafe) private var pendingPersistenceSnapshot: PersistedLibrary?
@@ -176,6 +278,7 @@ final class AppState {
             albums = ScreenshotFixture.albums
             library = ScreenshotFixture.songs
             playlists = ScreenshotFixture.playlists
+            musicFolders = []
         } else if hasPersistedLibrary {
             do {
                 let data = try Data(contentsOf: storeURL)
@@ -184,17 +287,20 @@ final class AppState {
                 albums = sanitized.albums
                 library = Self.songsWithFilenameMetadataFallback(sanitized.songs)
                 playlists = Self.normalizedSystemGroups(sanitized.playlists)
+                musicFolders = sanitized.musicFolders
             } catch {
                 loadFailed = true
                 persistenceProtectionActive = true
                 albums = []
                 library = []
                 playlists = Self.normalizedSystemGroups([])
+                musicFolders = []
             }
         } else {
             albums = []
             library = []
             playlists = Self.normalizedSystemGroups([])
+            musicFolders = []
         }
         loaded = true
         // init 中赋值不触发 didSet，手动建一次索引
@@ -224,6 +330,11 @@ final class AppState {
         // 启动后台批量探测失效曲目（design.md D2）
         if screenshotScene == nil {
             probeAvailability()
+            if !musicFolders.isEmpty {
+                DispatchQueue.main.async { [weak self] in
+                    self?.scanMusicFolders(reportCompletion: false)
+                }
+            }
         }
     }
 
@@ -316,7 +427,81 @@ final class AppState {
                     || (album?.title.localizedStandardContains(q) ?? false)
             }
         }
-        return list
+        return sortedSongs(list)
+    }
+
+    var selectedVisibleSongs: [Song] {
+        viewSongs.filter { selectedSongIds.contains($0.id) }
+    }
+
+    func setSongSelection(_ ids: Set<String>) {
+        let visibleIds = Set(viewSongs.map(\.id))
+        let normalizedIds = ids.intersection(visibleIds)
+        let primaryId = viewSongs.first(where: { normalizedIds.contains($0.id) })?.id
+        if selectedSongIds != normalizedIds {
+            selectedSongIds = normalizedIds
+        }
+        if selectedId != primaryId {
+            selectedId = primaryId
+        }
+    }
+
+    func selectOnly(_ songId: String) {
+        setSongSelection([songId])
+    }
+
+    func clearSongSelection() {
+        selectedSongIds.removeAll()
+        selectedId = nil
+    }
+
+    func setLibrarySort(_ field: LibrarySortField) {
+        if librarySortField == field {
+            librarySortDirection = librarySortDirection == .ascending ? .descending : .ascending
+        } else {
+            librarySortField = field
+            librarySortDirection = .ascending
+        }
+    }
+
+    func toggleLibrarySortDirection() {
+        librarySortDirection = librarySortDirection == .ascending ? .descending : .ascending
+    }
+
+    private func sortedSongs(_ songs: [Song]) -> [Song] {
+        songs.enumerated().sorted { lhs, rhs in
+            let comparison = compareForCurrentSort(lhs.element, rhs.element)
+            if comparison == .orderedSame {
+                return lhs.offset < rhs.offset
+            }
+            switch librarySortDirection {
+            case .ascending: return comparison == .orderedAscending
+            case .descending: return comparison == .orderedDescending
+            }
+        }.map(\.element)
+    }
+
+    private func compareForCurrentSort(_ lhs: Song, _ rhs: Song) -> ComparisonResult {
+        switch librarySortField {
+        case .title:
+            return lhs.title.localizedStandardCompare(rhs.title)
+        case .artist:
+            return artistName(for: lhs).localizedStandardCompare(artistName(for: rhs))
+        case .album:
+            return albumTitle(for: lhs).localizedStandardCompare(albumTitle(for: rhs))
+        case .dateAdded:
+            switch (lhs.dateAdded, rhs.dateAdded) {
+            case let (lhsDate?, rhsDate?):
+                if lhsDate == rhsDate { return .orderedSame }
+                return lhsDate < rhsDate ? .orderedAscending : .orderedDescending
+            case (_?, nil):
+                return librarySortDirection == .ascending ? .orderedAscending : .orderedDescending
+            case (nil, _?):
+                return librarySortDirection == .ascending ? .orderedDescending : .orderedAscending
+            case (nil, nil):
+                return .orderedSame
+            }
+        }
     }
 
     func artistName(for song: Song) -> String {
@@ -436,6 +621,29 @@ final class AppState {
         }
     }
 
+    func setFavorite(_ favorite: Bool, songIds: [String]) {
+        let validIds = orderedValidSongIds(songIds)
+        guard !validIds.isEmpty else { return }
+        let validIdSet = Set(validIds)
+        allowPersistenceAfterUserChange()
+        updatePlaylists { groups in
+            groups.map { group in
+                guard Self.isFavoritesGroupId(group.id) else { return group }
+                var group = group
+                if favorite {
+                    let existing = Set(group.songIds)
+                    group.songIds.append(contentsOf: validIds.filter { !existing.contains($0) })
+                } else {
+                    group.songIds.removeAll { validIdSet.contains($0) }
+                }
+                return group
+            }
+        }
+        showToast(favorite
+            ? "已收藏 \(validIds.count) 首歌曲"
+            : "已取消收藏 \(validIds.count) 首歌曲")
+    }
+
     // ── Toast ──
     func showToast(_ msg: String) {
         toastTask?.cancel()
@@ -547,26 +755,109 @@ final class AppState {
         showToast("已添加到分组「\(current.name)」")
     }
 
+    @discardableResult
+    func addSongs(_ songIds: [String], toGroupId groupId: String) -> Int {
+        guard let current = playlists.first(where: { $0.id == groupId }),
+              !isSystemGroup(current) else { return 0 }
+        let validIds = orderedValidSongIds(songIds)
+        let existingIds = Set(current.songIds)
+        let idsToAdd = validIds.filter { !existingIds.contains($0) }
+        guard !idsToAdd.isEmpty else {
+            showToast("所选歌曲已在分组「\(current.name)」中")
+            return 0
+        }
+        allowPersistenceAfterUserChange()
+        updatePlaylists { groups in
+            groups.map { group in
+                var group = group
+                if group.id == current.id {
+                    group.songIds.append(contentsOf: idsToAdd)
+                }
+                return group
+            }
+        }
+        showToast("已添加 \(idsToAdd.count) 首歌曲到「\(current.name)」")
+        return idsToAdd.count
+    }
+
+    func addSongsToQueue(_ songIds: [String]) {
+        let songs = orderedValidSongIds(songIds).compactMap { songsById[$0] }
+        player.addToQueue(songs)
+    }
+
     func removeSong(_ song: Song) {
         allowPersistenceAfterUserChange()
-        removeSongRecord(song)
+        removeSongRecords([song.id])
         showToast("已从资料库移除「\(song.title)」")
     }
 
     private func removeSongRecord(_ song: Song) {
-        library.removeAll { $0.id == song.id }
+        removeSongRecords([song.id])
+    }
+
+    func requestRemoval(of songIds: [String]) {
+        let validIds = orderedValidSongIds(songIds)
+        guard !validIds.isEmpty else { return }
+        if validIds.count == 1, let song = songsById[validIds[0]] {
+            if let playlist = viewPlaylist {
+                removeSong(song, from: playlist)
+            } else {
+                removeSong(song)
+            }
+            return
+        }
+        if let playlist = viewPlaylist {
+            pendingSongRemoval = PendingSongRemoval(
+                songIds: validIds,
+                scope: .playlist(id: playlist.id, name: playlist.name)
+            )
+        } else {
+            pendingSongRemoval = PendingSongRemoval(songIds: validIds, scope: .library)
+        }
+    }
+
+    func cancelPendingSongRemoval() {
+        pendingSongRemoval = nil
+    }
+
+    func confirmPendingSongRemoval() {
+        guard let pending = pendingSongRemoval else { return }
+        pendingSongRemoval = nil
+        switch pending.scope {
+        case .library:
+            removeSongsFromLibrary(pending.songIds)
+        case .playlist(let id, _):
+            removeSongs(pending.songIds, fromGroupId: id)
+        }
+    }
+
+    func removeSongsFromLibrary(_ songIds: [String]) {
+        let validIds = orderedValidSongIds(songIds)
+        guard !validIds.isEmpty else { return }
+        allowPersistenceAfterUserChange()
+        removeSongRecords(validIds)
+        showToast("已从资料库移除 \(validIds.count) 首歌曲")
+    }
+
+    private func removeSongRecords(_ songIds: [String]) {
+        let ids = Set(songIds)
+        guard !ids.isEmpty else { return }
+        library.removeAll { ids.contains($0.id) }
         updatePlaylists { groups in
             groups.map { group in
                 var group = group
-                group.songIds.removeAll { $0 == song.id }
+                group.songIds.removeAll { ids.contains($0) }
                 return group
             }
         }
-        player.handleSongRemoved(song.id)
-        if selectedId == song.id {
-            selectedId = nil
+        for id in songIds {
+            player.handleSongRemoved(id)
         }
-        clearMissing(song.id)
+        selectedSongIds.subtract(ids)
+        if let selectedId, ids.contains(selectedId) {
+            self.selectedId = selectedVisibleSongs.first?.id
+        }
+        missingIds.subtract(ids)
     }
 
     func deleteLocalFile(for song: Song) {
@@ -648,10 +939,36 @@ final class AppState {
                 return group
             }
         }
-        if selectedId == song.id {
-            selectedId = nil
-        }
+        selectedSongIds.remove(song.id)
+        if selectedId == song.id { selectedId = selectedVisibleSongs.first?.id }
         showToast("已从分组「\(playlist.name)」移除")
+    }
+
+    func removeSongs(_ songIds: [String], fromGroupId groupId: String) {
+        guard let playlist = playlists.first(where: { $0.id == groupId }) else { return }
+        let ids = Set(orderedValidSongIds(songIds))
+        let removableIds = ids.intersection(playlist.songIds)
+        guard !removableIds.isEmpty else { return }
+        allowPersistenceAfterUserChange()
+        updatePlaylists { groups in
+            groups.map { group in
+                var group = group
+                if group.id == groupId {
+                    group.songIds.removeAll { removableIds.contains($0) }
+                }
+                return group
+            }
+        }
+        selectedSongIds.subtract(removableIds)
+        if let selectedId, removableIds.contains(selectedId) {
+            self.selectedId = selectedVisibleSongs.first?.id
+        }
+        showToast("已从分组「\(playlist.name)」移除 \(removableIds.count) 首歌曲")
+    }
+
+    private func orderedValidSongIds(_ songIds: [String]) -> [String] {
+        var seen = Set<String>()
+        return songIds.filter { songsById[$0] != nil && seen.insert($0).inserted }
     }
 
     func clearLibrary() {
@@ -662,6 +979,7 @@ final class AppState {
         player.resetPlaybackSession()
         albums = []
         library = []
+        musicFolders = []
         updatePlaylists { groups in
             groups.map { group in
                 var group = group
@@ -671,7 +989,7 @@ final class AppState {
         }
         missingIds.removeAll()
         view = .library
-        selectedId = nil
+        clearSongSelection()
         search = ""
         showToast("已清空歌曲列表（\(count) 首）")
     }
@@ -774,6 +1092,378 @@ final class AppState {
         }
     }
 
+    // ── 音乐文件夹来源（spec: music-folder-sources） ──
+
+    func addMusicFoldersViaPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "添加"
+        guard panel.runModal() == .OK else { return }
+        addMusicFolders(panel.urls)
+    }
+
+    @discardableResult
+    func addMusicFolders(_ urls: [URL], startScan: Bool = true) -> Int {
+        guard !urls.isEmpty else { return 0 }
+        var accepted: [MusicFolderSource] = []
+        var rejected = 0
+        var comparisonURLs = musicFolders.compactMap(MusicFolderScanner.resolvedURL(for:))
+
+        for url in urls {
+            let canonical = MusicFolderScanner.canonicalURL(url)
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: canonical.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue,
+                  !comparisonURLs.contains(where: { MusicFolderScanner.pathsOverlap($0, canonical) }) else {
+                rejected += 1
+                continue
+            }
+            accepted.append(MusicFolderScanner.makeSource(for: canonical))
+            comparisonURLs.append(canonical)
+        }
+
+        guard !accepted.isEmpty else {
+            showToast(rejected > 0 ? "所选位置与现有音乐文件夹重复" : "未选择可用的音乐文件夹")
+            return 0
+        }
+
+        allowPersistenceAfterUserChange()
+        musicFolders.append(contentsOf: accepted)
+        if startScan {
+            scanMusicFolders(sourceIds: Set(accepted.map(\.id)), revealLibrary: true)
+        } else {
+            var message = "已添加 \(accepted.count) 个音乐文件夹"
+            if rejected > 0 { message += "，跳过 \(rejected) 个重复位置" }
+            showToast(message)
+        }
+        return accepted.count
+    }
+
+    func removeMusicFolder(_ sourceId: String) {
+        guard let source = musicFolders.first(where: { $0.id == sourceId }) else { return }
+        allowPersistenceAfterUserChange()
+        musicFolders.removeAll { $0.id == sourceId }
+        var updatedLibrary = library
+        var changed = false
+        for index in updatedLibrary.indices where updatedLibrary[index].sourceFolderId == sourceId {
+            updatedLibrary[index].sourceFolderId = nil
+            changed = true
+        }
+        if changed {
+            library = updatedLibrary
+        }
+        showToast("已停止同步「\(source.name)」，歌曲仍保留在资料库")
+    }
+
+    func scanMusicFolders(
+        sourceIds: Set<String>? = nil,
+        reportCompletion: Bool = true,
+        revealLibrary: Bool = false
+    ) {
+        let sources = sourceIds.map { ids in musicFolders.filter { ids.contains($0.id) } } ?? musicFolders
+        guard !sources.isEmpty else {
+            if reportCompletion {
+                showToast("尚未添加音乐文件夹")
+            }
+            return
+        }
+        guard !importPhase.isImporting else {
+            if reportCompletion {
+                showToast("资料库任务正在进行，请稍候或先取消当前任务")
+            }
+            return
+        }
+
+        let librarySnapshot = library
+        let albumsSnapshot = albums
+        libraryActivityKind = .scanning
+        importPhase = .processing(completed: 0, total: 1)
+        let progress: @MainActor @Sendable (Int, Int) -> Void = { [weak self] completed, total in
+            guard let self, self.importPhase.isImporting, self.libraryActivityKind == .scanning else { return }
+            self.importPhase = .processing(completed: completed, total: max(total, 1))
+        }
+        let worker = Task.detached(priority: .utility) {
+            await Self.buildFolderScanResult(
+                sources: sources,
+                library: librarySnapshot,
+                albums: albumsSnapshot,
+                progress: progress
+            )
+        }
+        folderScanWorkerTask = worker
+        importTask = Task { @MainActor [weak self] in
+            let result = await worker.value
+            guard let self else { return }
+            defer {
+                self.folderScanWorkerTask = nil
+                self.importTask = nil
+                self.importPhase = .idle
+                self.libraryActivityKind = .importing
+            }
+            guard !Task.isCancelled, !worker.isCancelled else { return }
+            self.applyFolderScanResult(
+                result,
+                reportCompletion: reportCompletion,
+                revealLibrary: revealLibrary
+            )
+        }
+    }
+
+    nonisolated private static func buildFolderScanResult(
+        sources: [MusicFolderSource],
+        library: [Song],
+        albums: [Album],
+        progress: @MainActor @Sendable (Int, Int) -> Void
+    ) async -> FolderScanResult {
+        var result = FolderScanResult()
+        var enumerations: [MusicFolderScanner.EnumerationResult] = []
+        var scopedURLs: [(URL, Bool)] = []
+        for source in sources {
+            if let url = MusicFolderScanner.resolvedURL(for: source) {
+                scopedURLs.append((url, url.startAccessingSecurityScopedResource()))
+            }
+        }
+        defer {
+            for (url, accessing) in scopedURLs where accessing {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        for source in sources {
+            guard !Task.isCancelled else { return result }
+            do {
+                let enumeration = try MusicFolderScanner.enumerate(source)
+                enumerations.append(enumeration)
+                result.successfulSources.append(enumeration.source)
+            } catch {
+                result.failedSourceNames.append(source.name)
+            }
+        }
+
+        let files = enumerations.flatMap(\.files)
+        await progress(0, files.count)
+
+        var albumIdsByKey: [ImportAlbumKey: String] = [:]
+        for album in albums {
+            let key = ImportAlbumKey(title: album.title, artist: album.artist)
+            if albumIdsByKey[key] == nil {
+                albumIdsByKey[key] = album.id
+            }
+        }
+        var albumsById = Dictionary(uniqueKeysWithValues: albums.map { ($0.id, $0) })
+        var imported = ImportResult()
+        let existingByPath = Dictionary(
+            library.compactMap { song in
+                song.fileURL.map { ($0.standardizedFileURL.path, song) }
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let existingByIdentity = Dictionary(
+            library.compactMap { song in song.fileIdentity.map { ($0, song) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var claimedSongIds: Set<String> = []
+        var discoveredPaths: Set<String> = []
+        var discoveredIdentities: Set<String> = []
+        var processed = 0
+
+        for file in files {
+            guard !Task.isCancelled else { return result }
+            let path = file.url.standardizedFileURL.path
+            if !discoveredPaths.insert(path).inserted {
+                processed += 1
+                await progress(processed, files.count)
+                continue
+            }
+            if let identity = file.identity, !discoveredIdentities.insert(identity).inserted {
+                processed += 1
+                await progress(processed, files.count)
+                continue
+            }
+
+            var existing = existingByPath[path]
+            if let pathMatch = existing, claimedSongIds.contains(pathMatch.id) {
+                existing = nil
+            }
+            if existing == nil, let identity = file.identity,
+               let identityMatch = existingByIdentity[identity],
+               !claimedSongIds.contains(identityMatch.id) {
+                existing = identityMatch
+            }
+            if let existing {
+                claimedSongIds.insert(existing.id)
+            }
+
+            let metadataChanged = existing == nil
+                || existing?.fileModificationDate != file.modificationDate
+                || existing?.fileSize != file.size
+            if metadataChanged {
+                if canDecodeAudio(at: file.url),
+                   let metadata = await parseMetadata(url: file.url) {
+                    appendImportedSong(
+                        url: file.url,
+                        metadata: metadata,
+                        albumIdsByKey: &albumIdsByKey,
+                        albumsById: &albumsById,
+                        result: &imported,
+                        id: existing?.id,
+                        sourceFolderId: file.sourceId,
+                        fileIdentity: file.identity,
+                        fileModificationDate: file.modificationDate,
+                        fileSize: file.size,
+                        dateAdded: existing?.dateAdded,
+                        replaceExistingArtwork: existing != nil
+                    )
+                    if existing == nil {
+                        result.addedCount += 1
+                    } else {
+                        result.refreshedCount += 1
+                        if existing?.fileURL?.standardizedFileURL.path != path {
+                            result.movedCount += 1
+                        }
+                    }
+                } else {
+                    result.skippedBroken += 1
+                }
+            } else if var existing {
+                if existing.fileURL?.standardizedFileURL.path != path {
+                    result.movedCount += 1
+                }
+                existing.fileURL = file.url
+                existing.sourceFolderId = file.sourceId
+                existing.fileIdentity = file.identity
+                existing.fileModificationDate = file.modificationDate
+                existing.fileSize = file.size
+                result.songs.append(existing)
+            }
+            processed += 1
+            await progress(processed, files.count)
+        }
+
+        result.songs.append(contentsOf: imported.songs)
+        result.newAlbums = imported.newAlbums
+        result.albumArtworkUpdates = imported.albumArtworkUpdates
+        return result
+    }
+
+    @MainActor private func applyFolderScanResult(
+        _ result: FolderScanResult,
+        reportCompletion: Bool,
+        revealLibrary: Bool
+    ) {
+        let successfulIds = Set(result.successfulSources.map(\.id))
+        var updatedAlbums = albums
+        var albumIdRemap: [String: String] = [:]
+
+        for update in result.albumArtworkUpdates {
+            guard let index = updatedAlbums.firstIndex(where: { $0.id == update.albumId }),
+                  update.replacesExisting || updatedAlbums[index].artworkData == nil else { continue }
+            updatedAlbums[index].artworkData = update.artworkData
+        }
+        for album in result.newAlbums {
+            albumIdRemap[album.id] = Self.mergeImportedAlbum(album, into: &updatedAlbums)
+        }
+        let scannedSongs = result.songs.map { song in
+            var song = song
+            if let albumId = song.albumId, let remapped = albumIdRemap[albumId] {
+                song.albumId = remapped
+            }
+            return song
+        }
+
+        var updatedLibrary = library.filter { song in
+            guard let sourceId = song.sourceFolderId else { return true }
+            return !successfulIds.contains(sourceId)
+        }
+        for scannedSong in scannedSongs {
+            if let index = updatedLibrary.firstIndex(where: { $0.id == scannedSong.id }) {
+                updatedLibrary[index] = scannedSong
+            } else if let path = scannedSong.fileURL?.standardizedFileURL.path,
+                      let index = updatedLibrary.firstIndex(where: {
+                          $0.fileURL?.standardizedFileURL.path == path
+                      }) {
+                var adopted = scannedSong
+                adopted = Song(
+                    id: updatedLibrary[index].id,
+                    title: adopted.title,
+                    artist: adopted.artist,
+                    albumId: adopted.albumId,
+                    duration: adopted.duration,
+                    fileURL: adopted.fileURL,
+                    artworkData: adopted.artworkData,
+                    sourceFolderId: adopted.sourceFolderId,
+                    fileIdentity: adopted.fileIdentity,
+                    fileModificationDate: adopted.fileModificationDate,
+                    fileSize: adopted.fileSize,
+                    dateAdded: updatedLibrary[index].dateAdded
+                )
+                updatedLibrary[index] = adopted
+            } else {
+                updatedLibrary.append(scannedSong)
+            }
+        }
+
+        let oldIds = Set(library.map(\.id))
+        let newIds = Set(updatedLibrary.map(\.id))
+        let removedIds = oldIds.subtracting(newIds)
+        let referencedAlbumIds = Set(updatedLibrary.compactMap(\.albumId))
+        updatedAlbums.removeAll { !referencedAlbumIds.contains($0.id) }
+
+        allowPersistenceAfterUserChange()
+        let successfulById = Dictionary(uniqueKeysWithValues: result.successfulSources.map { ($0.id, $0) })
+        musicFolders = musicFolders.map { successfulById[$0.id] ?? $0 }
+        if updatedAlbums != albums {
+            albums = updatedAlbums
+        }
+        if updatedLibrary != library {
+            library = updatedLibrary
+        }
+        removeSongReferences(removedIds)
+        for song in scannedSongs {
+            clearMissing(song.id)
+        }
+        if revealLibrary {
+            view = .library
+        }
+
+        guard reportCompletion else { return }
+        let removedCount = removedIds.count
+        var details: [String] = []
+        if result.addedCount > 0 { details.append("新增 \(result.addedCount) 首") }
+        if result.movedCount > 0 { details.append("移动 \(result.movedCount) 首") }
+        if result.refreshedCount > 0 { details.append("更新 \(result.refreshedCount) 首") }
+        if removedCount > 0 { details.append("移除 \(removedCount) 首") }
+        if result.skippedBroken > 0 { details.append("\(result.skippedBroken) 个文件无法解码") }
+        if !result.failedSourceNames.isEmpty {
+            details.append("\(result.failedSourceNames.count) 个文件夹无法访问")
+        }
+        showToast(details.isEmpty ? "音乐文件夹已是最新" : "扫描完成：" + details.joined(separator: "，"))
+    }
+
+    private func removeSongReferences(_ ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        updatePlaylists { groups in
+            groups.map { group in
+                var group = group
+                group.songIds.removeAll { ids.contains($0) }
+                return group
+            }
+        }
+        for id in ids {
+            player.handleSongRemoved(id)
+        }
+        selectedSongIds.subtract(ids)
+        if let selectedId, ids.contains(selectedId) {
+            self.selectedId = selectedVisibleSongs.first?.id
+        }
+        if let lyricsPage, ids.contains(lyricsPage.songId) {
+            self.lyricsPage = nil
+        }
+        missingIds.subtract(ids)
+    }
+
     // ── 导入（spec: library-import） ──
 
     nonisolated static func canDecodeAudio(at url: URL) -> Bool {
@@ -792,31 +1482,6 @@ final class AppState {
         }
     }
 
-    func importFolderViaPanel() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.prompt = "导入文件夹"
-        guard panel.runModal() == .OK, let folderURL = panel.urls.first else { return }
-
-        let keys: Set<URLResourceKey> = [.isRegularFileKey]
-        guard let urls = try? FileManager.default.contentsOfDirectory(
-            at: folderURL,
-            includingPropertiesForKeys: Array(keys),
-            options: [.skipsHiddenFiles]
-        ) else {
-            showToast("未发现可导入的音频文件")
-            return
-        }
-
-        let fileURLs = urls.filter { url in
-            guard (try? url.resourceValues(forKeys: keys).isRegularFile) == true else { return false }
-            return true
-        }
-        importFiles(fileURLs)
-    }
-
     func importFiles(_ urls: [URL]) {
         let audioURLs = urls.filter { AudioFileSupport.isSupportedExtension($0) }
         guard !audioURLs.isEmpty else {
@@ -830,6 +1495,7 @@ final class AppState {
 
         let existingPaths = Set(library.compactMap { $0.fileURL?.standardizedFileURL.path })
         let albumsSnapshot = albums
+        libraryActivityKind = .importing
         importPhase = .processing(completed: 0, total: audioURLs.count)
 
         let progress: @MainActor @Sendable (Int) -> Void = { [weak self] completed in
@@ -860,12 +1526,16 @@ final class AppState {
 
     func cancelImport() {
         guard importPhase.isImporting else { return }
+        let cancellationMessage = libraryActivityKind.cancellationMessage
         importWorkerTask?.cancel()
+        folderScanWorkerTask?.cancel()
         importTask?.cancel()
         importWorkerTask = nil
+        folderScanWorkerTask = nil
         importTask = nil
         importPhase = .idle
-        showToast("已取消音乐导入")
+        libraryActivityKind = .importing
+        showToast(cancellationMessage)
     }
 
     @MainActor private func applyImportResult(_ result: ImportResult) {
@@ -874,7 +1544,7 @@ final class AppState {
 
         for update in result.albumArtworkUpdates {
             guard let index = updatedAlbums.firstIndex(where: { $0.id == update.albumId }),
-                  updatedAlbums[index].artworkData == nil else { continue }
+                  update.replacesExisting || updatedAlbums[index].artworkData == nil else { continue }
             updatedAlbums[index].artworkData = update.artworkData
         }
         for album in result.newAlbums {
@@ -967,7 +1637,14 @@ final class AppState {
         metadata: ParsedMetadata,
         albumIdsByKey: inout [ImportAlbumKey: String],
         albumsById: inout [String: Album],
-        result: inout ImportResult
+        result: inout ImportResult,
+        id: String? = nil,
+        sourceFolderId: String? = nil,
+        fileIdentity: String? = nil,
+        fileModificationDate: Date? = nil,
+        fileSize: Int64? = nil,
+        dateAdded: Date? = nil,
+        replaceExistingArtwork: Bool = false
     ) {
         var albumId: String?
         let artworkData = metadata.embeddedArtworkData ?? metadata.sidecarArtworkData
@@ -980,18 +1657,24 @@ final class AppState {
                 artworkData: artworkData,
                 albumIdsByKey: &albumIdsByKey,
                 albumsById: &albumsById,
-                result: &result
+                result: &result,
+                replaceExistingArtwork: replaceExistingArtwork
             )
         }
 
         result.songs.append(Song(
-            id: "imp-" + UUID().uuidString,
+            id: id ?? "imp-" + UUID().uuidString,
             title: metadata.title,
             artist: metadata.artist,
             albumId: albumId,
             duration: metadata.duration,
             fileURL: url,
-            artworkData: metadata.sidecarArtworkData ?? (albumId == nil ? metadata.embeddedArtworkData : nil)
+            artworkData: metadata.sidecarArtworkData ?? (albumId == nil ? metadata.embeddedArtworkData : nil),
+            sourceFolderId: sourceFolderId,
+            fileIdentity: fileIdentity,
+            fileModificationDate: fileModificationDate,
+            fileSize: fileSize,
+            dateAdded: dateAdded ?? (id == nil ? Date() : nil)
         ))
     }
 
@@ -1019,13 +1702,19 @@ final class AppState {
         artworkData: Data?,
         albumIdsByKey: inout [ImportAlbumKey: String],
         albumsById: inout [String: Album],
-        result: inout ImportResult
+        result: inout ImportResult,
+        replaceExistingArtwork: Bool = false
     ) -> String {
         let key = ImportAlbumKey(title: title, artist: artist)
         if let albumId = albumIdsByKey[key] {
-            if albumsById[albumId]?.artworkData == nil, let artworkData {
+            if let artworkData,
+               replaceExistingArtwork || albumsById[albumId]?.artworkData == nil {
                 albumsById[albumId]?.artworkData = artworkData
-                result.albumArtworkUpdates.append(AlbumArtworkUpdate(albumId: albumId, artworkData: artworkData))
+                result.albumArtworkUpdates.append(AlbumArtworkUpdate(
+                    albumId: albumId,
+                    artworkData: artworkData,
+                    replacesExisting: replaceExistingArtwork
+                ))
             }
             return albumId
         }
@@ -1292,6 +1981,31 @@ final class AppState {
         var albums: [Album]
         var songs: [Song]
         var playlists: [Playlist]
+        var musicFolders: [MusicFolderSource]
+
+        private enum CodingKeys: String, CodingKey {
+            case albums, songs, playlists, musicFolders
+        }
+
+        init(
+            albums: [Album],
+            songs: [Song],
+            playlists: [Playlist],
+            musicFolders: [MusicFolderSource]
+        ) {
+            self.albums = albums
+            self.songs = songs
+            self.playlists = playlists
+            self.musicFolders = musicFolders
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            albums = try container.decode([Album].self, forKey: .albums)
+            songs = try container.decode([Song].self, forKey: .songs)
+            playlists = try container.decode([Playlist].self, forKey: .playlists)
+            musicFolders = try container.decodeIfPresent([MusicFolderSource].self, forKey: .musicFolders) ?? []
+        }
     }
 
     private static var stripsBundledSampleData: Bool {
@@ -1322,11 +2036,21 @@ final class AppState {
             isFavoritesGroupId(playlist.id) || !playlist.songIds.isEmpty
         }
 
-        return PersistedLibrary(albums: albums, songs: songs, playlists: playlists)
+        return PersistedLibrary(
+            albums: albums,
+            songs: songs,
+            playlists: playlists,
+            musicFolders: persisted.musicFolders
+        )
     }
 
     private var currentPersistenceSnapshot: PersistedLibrary {
-        PersistedLibrary(albums: albums, songs: library, playlists: playlists)
+        PersistedLibrary(
+            albums: albums,
+            songs: library,
+            playlists: playlists,
+            musicFolders: musicFolders
+        )
     }
 
     private static var storeURL: URL {

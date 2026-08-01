@@ -31,7 +31,10 @@ struct CrateApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1240, height: 760)
+        .defaultSize(
+            width: WindowMetrics.defaultContentWidth,
+            height: WindowMetrics.defaultContentHeight
+        )
         .commands {
             CommandGroup(after: .appInfo) {
                 Button("检查更新...") {

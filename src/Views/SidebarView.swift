@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SidebarView: View {
     @Environment(AppState.self) private var app
@@ -6,12 +7,9 @@ struct SidebarView: View {
     @State private var editingGroup: Playlist?
     @State private var pendingDeleteGroup: Playlist?
     @State private var draggedGroupId: String?
-    @State private var dragStartIndex: Int?
-    @State private var dragTranslation: CGFloat = 0
-    @State private var suppressedSelectionGroupId: String?
+    @State private var groupDragReleaseMonitor = MouseDragReleaseMonitor()
     @State private var groupName = ""
-
-    private let groupRowHeight: CGFloat = 32
+    @State private var songDropTargetGroupId: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -29,31 +27,34 @@ struct SidebarView: View {
 
                     sectionHeader("分组", showsAddButton: true)
                     ForEach(Array(app.playlists.enumerated()), id: \.element.id) { index, pl in
-                        SideItem(
-                            icon: "music.note.list",
-                            label: pl.name,
-                            active: app.view == .playlist(pl.id)
-                        ) {
-                            guard suppressedSelectionGroupId != pl.id else { return }
-                            app.view = .playlist(pl.id)
-                        }
-                        .contextMenu {
-                            if !app.isSystemGroup(pl) {
-                                Button("重命名") {
-                                    editingGroup = pl
-                                    groupName = pl.name
-                                    showingGroupEditor = true
-                                }
-                                Button("删除分组", role: .destructive) {
-                                    pendingDeleteGroup = pl
-                                }
+                        SidebarGroupRow(
+                            playlist: pl,
+                            targetIndex: index,
+                            active: app.view == .playlist(pl.id),
+                            isSystemGroup: app.isSystemGroup(pl),
+                            isDragging: draggedGroupId == pl.id,
+                            draggedGroupId: $draggedGroupId,
+                            songDropTargetGroupId: $songDropTargetGroupId,
+                            onSelect: {
+                                app.view = .playlist(pl.id)
+                            },
+                            onRename: {
+                                editingGroup = pl
+                                groupName = pl.name
+                                showingGroupEditor = true
+                            },
+                            onDelete: {
+                                pendingDeleteGroup = pl
+                            },
+                            onBeginDrag: {
+                                beginGroupDragging(pl.id)
+                            },
+                            onFinishGroupDrag: finishGroupDragging,
+                            onMoveGroup: moveDraggedGroup,
+                            onSongDrop: { providers in
+                                acceptSongDrop(providers, into: pl)
                             }
-                        }
-                        .offset(y: rowOffset(for: pl.id, at: index))
-                        .scaleEffect(draggedGroupId == pl.id ? 1.015 : 1)
-                        .zIndex(draggedGroupId == pl.id ? 1 : 0)
-                        .animation(MotionTokens.feedback, value: dragTargetIndex)
-                        .gesture(groupDragGesture(for: pl.id, at: index))
+                        )
                     }
                 }
                 .padding(.bottom, 12)
@@ -98,6 +99,9 @@ struct SidebarView: View {
         } message: {
             Text("这只会删除分组，不会删除资料库中的歌曲。")
         }
+        .onDisappear {
+            finishGroupDragging()
+        }
     }
 
     private func sectionHeader(_ title: String, showsAddButton: Bool = false) -> some View {
@@ -125,67 +129,249 @@ struct SidebarView: View {
         )
     }
 
-    private var dragTargetIndex: Int? {
-        guard let dragStartIndex, !app.playlists.isEmpty else { return nil }
-        let delta = Int((dragTranslation / groupRowHeight).rounded())
-        return Swift.min(Swift.max(dragStartIndex + delta, 1), app.playlists.count - 1)
-    }
-
-    private func rowOffset(for groupId: String, at index: Int) -> CGFloat {
-        guard let draggedGroupId,
-              let dragStartIndex,
-              let dragTargetIndex else { return 0 }
-        if groupId == draggedGroupId { return dragTranslation }
-        if dragStartIndex < dragTargetIndex, index > dragStartIndex, index <= dragTargetIndex {
-            return -groupRowHeight
+    private func beginGroupDragging(_ groupId: String) -> NSItemProvider {
+        finishGroupDragging()
+        draggedGroupId = groupId
+        groupDragReleaseMonitor.start {
+            finishGroupDragging()
         }
-        if dragTargetIndex < dragStartIndex, index >= dragTargetIndex, index < dragStartIndex {
-            return groupRowHeight
-        }
-        return 0
+        return NSItemProvider(object: groupId as NSString)
     }
 
-    private func groupDragGesture(for groupId: String, at index: Int) -> some Gesture {
-        DragGesture(minimumDistance: 5)
-            .onChanged { value in
-                guard !isSystemGroup(groupId) else { return }
-                if draggedGroupId == nil {
-                    draggedGroupId = groupId
-                    dragStartIndex = index
-                }
-                guard draggedGroupId == groupId else { return }
-                dragTranslation = value.translation.height
-            }
-            .onEnded { _ in
-                let shouldSuppressSelection = draggedGroupId == groupId && abs(dragTranslation) > 4
-                if shouldSuppressSelection {
-                    suppressedSelectionGroupId = groupId
-                }
-                if draggedGroupId == groupId,
-                   let dragStartIndex,
-                   let dragTargetIndex,
-                   dragTargetIndex != dragStartIndex {
-                    app.moveGroup(groupId, to: dragTargetIndex)
-                }
-                resetGroupDrag()
-                if shouldSuppressSelection {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        if suppressedSelectionGroupId == groupId {
-                            suppressedSelectionGroupId = nil
-                        }
-                    }
-                }
-            }
-    }
-
-    private func isSystemGroup(_ groupId: String) -> Bool {
-        app.playlists.first(where: { $0.id == groupId }).map(app.isSystemGroup) ?? false
-    }
-
-    private func resetGroupDrag() {
+    private func finishGroupDragging() {
         draggedGroupId = nil
-        dragStartIndex = nil
-        dragTranslation = 0
+        groupDragReleaseMonitor.stop()
+    }
+
+    private func moveDraggedGroup(_ sourceGroupId: String, to targetIndex: Int) {
+        withAnimation(MotionTokens.feedback) {
+            app.moveGroup(sourceGroupId, to: targetIndex)
+        }
+    }
+
+    private func acceptSongDrop(_ providers: [NSItemProvider], into playlist: Playlist) -> Bool {
+        guard !app.isSystemGroup(playlist),
+              let provider = providers.first(where: {
+                  $0.hasItemConformingToTypeIdentifier(SongDragPayload.typeIdentifier)
+              }) else { return false }
+        provider.loadDataRepresentation(forTypeIdentifier: SongDragPayload.typeIdentifier) { data, _ in
+            guard let data,
+                  let songIds = try? JSONDecoder().decode([String].self, from: data) else { return }
+            Task { @MainActor in
+                app.addSongs(songIds, toGroupId: playlist.id)
+                songDropTargetGroupId = nil
+            }
+        }
+        return true
+    }
+}
+
+private struct SidebarGroupRow: View {
+    var playlist: Playlist
+    var targetIndex: Int
+    var active: Bool
+    var isSystemGroup: Bool
+    var isDragging: Bool
+    @Binding var draggedGroupId: String?
+    @Binding var songDropTargetGroupId: String?
+    var onSelect: () -> Void
+    var onRename: () -> Void
+    var onDelete: () -> Void
+    var onBeginDrag: () -> NSItemProvider
+    var onFinishGroupDrag: () -> Void
+    var onMoveGroup: (String, Int) -> Void
+    var onSongDrop: ([NSItemProvider]) -> Bool
+
+    @Environment(AppState.self) private var app
+    @State private var hovering = false
+
+    var body: some View {
+        if isSystemGroup {
+            Button(action: onSelect) {
+                rowContent
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 1)
+            .onHover { hovering = $0 }
+        } else {
+            Button(action: onSelect) {
+                rowContent
+                    .onDrag(onBeginDrag) {
+                        SidebarGroupDragPreview(playlist: playlist)
+                            .environment(app)
+                    }
+            }
+            .buttonStyle(.plain)
+            .contextMenu {
+                Button("重命名", action: onRename)
+                Button("删除分组", role: .destructive, action: onDelete)
+            }
+            .onDrop(
+                of: [PlaylistDragPayload.contentType, SongDragPayload.contentType],
+                delegate: SidebarGroupDropDelegate(
+                    targetGroupId: playlist.id,
+                    targetIndex: targetIndex,
+                    draggedGroupId: $draggedGroupId,
+                    songDropTargetGroupId: $songDropTargetGroupId,
+                    onFinishGroupDrag: onFinishGroupDrag,
+                    onMoveGroup: onMoveGroup,
+                    onSongDrop: onSongDrop
+                )
+            )
+            .padding(.horizontal, 10)
+            .padding(.vertical, 1)
+            .onHover { hovering = $0 }
+        }
+    }
+
+    private var rowContent: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "music.note.list")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(app.tokens.accent)
+                .frame(width: 16)
+                .accessibilityHidden(true)
+            Text(playlist.name)
+                .font(.system(size: 13, weight: active ? .semibold : .regular))
+                .foregroundStyle(active ? app.tokens.accent : app.tokens.text)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if !isSystemGroup {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(app.tokens.text3)
+                    .opacity(hovering || isDragging ? 0.9 : 0.55)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .background {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(active ? app.tokens.accentSoft : (hovering ? app.tokens.hover : .clear))
+        }
+        .overlay(alignment: .leading) {
+            Capsule(style: .continuous)
+                .fill(app.tokens.accent)
+                .frame(width: 3, height: active ? 18 : 0)
+                .padding(.leading, 3)
+                .opacity(active ? 1 : 0)
+        }
+        .overlay {
+            if songDropTargetGroupId == playlist.id {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(app.tokens.accent, lineWidth: 1.5)
+            }
+        }
+        .opacity(isDragging ? 0 : 1)
+        .overlay {
+            if isDragging {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(app.tokens.accentSoft)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(
+                                app.tokens.accent.opacity(0.72),
+                                style: StrokeStyle(lineWidth: 1, dash: [5, 4])
+                            )
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .contentShape(Rectangle())
+        .animation(MotionTokens.feedback, value: hovering)
+        .animation(MotionTokens.feedback, value: active)
+        .animation(MotionTokens.feedback, value: isDragging)
+    }
+}
+
+private struct SidebarGroupDragPreview: View {
+    var playlist: Playlist
+
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "music.note.list")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(app.tokens.accent)
+                .frame(width: 16)
+            Text(playlist.name)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(app.tokens.text)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(app.tokens.text3)
+        }
+        .padding(.horizontal, 10)
+        .frame(width: 184, height: 34)
+        .background(app.tokens.panelBg)
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(app.tokens.sep, lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(app.theme == .dark ? 0.28 : 0.16), radius: 7, y: 3)
+    }
+}
+
+private struct SidebarGroupDropDelegate: DropDelegate {
+    var targetGroupId: String
+    var targetIndex: Int
+    @Binding var draggedGroupId: String?
+    @Binding var songDropTargetGroupId: String?
+    var onFinishGroupDrag: () -> Void
+    var onMoveGroup: (String, Int) -> Void
+    var onSongDrop: ([NSItemProvider]) -> Bool
+
+    func validateDrop(info: DropInfo) -> Bool {
+        if isGroupDrag(info) {
+            return true
+        }
+        return info.hasItemsConforming(to: [SongDragPayload.typeIdentifier])
+    }
+
+    func dropEntered(info: DropInfo) {
+        if isGroupDrag(info) {
+            guard let draggedGroupId,
+                  draggedGroupId != targetGroupId else { return }
+            onMoveGroup(draggedGroupId, targetIndex)
+        } else if info.hasItemsConforming(to: [SongDragPayload.typeIdentifier]) {
+            songDropTargetGroupId = targetGroupId
+        }
+    }
+
+    func dropExited(info: DropInfo) {
+        if songDropTargetGroupId == targetGroupId {
+            songDropTargetGroupId = nil
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard validateDrop(info: info) else {
+            return DropProposal(operation: .cancel)
+        }
+        return DropProposal(operation: isGroupDrag(info) ? .move : .copy)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        if isGroupDrag(info) {
+            onFinishGroupDrag()
+            return true
+        }
+        let providers = info.itemProviders(for: [SongDragPayload.typeIdentifier])
+        let accepted = onSongDrop(providers)
+        songDropTargetGroupId = nil
+        return accepted
+    }
+
+    private func isGroupDrag(_ info: DropInfo) -> Bool {
+        draggedGroupId != nil
+            && info.hasItemsConforming(to: [PlaylistDragPayload.typeIdentifier])
     }
 }
 
@@ -318,38 +504,42 @@ private struct SideItem: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(app.tokens.accent)
-                    .frame(width: 16)
-                Text(label)
-                    .font(.system(size: 13, weight: active ? .semibold : .regular))
-                    .foregroundStyle(active ? app.tokens.accent : app.tokens.text)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(active ? app.tokens.accentSoft : (hovering ? app.tokens.hover : .clear))
-            )
-            .overlay(alignment: .leading) {
-                Capsule(style: .continuous)
-                    .fill(app.tokens.accent)
-                    .frame(width: 3, height: active ? 18 : 0)
-                    .padding(.leading, 3)
-                    .opacity(active ? 1 : 0)
-            }
-            .scaleEffect(hovering && !active ? 1.006 : 1)
-            .contentShape(Rectangle())
-            .animation(MotionTokens.feedback, value: hovering)
-            .animation(MotionTokens.feedback, value: active)
+            content
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 10)
         .padding(.vertical, 1)
         .onHover { hovering = $0 }
+    }
+
+    private var content: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(app.tokens.accent)
+                .frame(width: 16)
+            Text(label)
+                .font(.system(size: 13, weight: active ? .semibold : .regular))
+                .foregroundStyle(active ? app.tokens.accent : app.tokens.text)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(active ? app.tokens.accentSoft : (hovering ? app.tokens.hover : .clear))
+        )
+        .overlay(alignment: .leading) {
+            Capsule(style: .continuous)
+                .fill(app.tokens.accent)
+                .frame(width: 3, height: active ? 18 : 0)
+                .padding(.leading, 3)
+                .opacity(active ? 1 : 0)
+        }
+        .scaleEffect(hovering && !active ? 1.006 : 1)
+        .contentShape(Rectangle())
+        .animation(MotionTokens.feedback, value: hovering)
+        .animation(MotionTokens.feedback, value: active)
     }
 }

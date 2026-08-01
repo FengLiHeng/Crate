@@ -209,10 +209,19 @@ final class AppUpdateServiceTests: XCTestCase {
 
         let failingDitto = try makeFailingDittoShim(in: tempDir)
         let scriptURL = tempDir.appendingPathComponent("install-crate-update.sh")
-        let script = AppUpdateService.installationScript.replacing(
-            "/usr/bin/ditto \"$NEW_APP\" \"$CURRENT_APP\"",
-            with: "\"\(failingDitto.path)\" \"$NEW_APP\" \"$CURRENT_APP\""
-        )
+        let script = AppUpdateService.installationScript
+            .replacing(
+                """
+                while /usr/bin/pgrep -x "Crate" >/dev/null 2>&1; do
+                    /bin/sleep 0.2
+                done
+                """,
+                with: ""
+            )
+            .replacing(
+                "/usr/bin/ditto \"$NEW_APP\" \"$CURRENT_APP\"",
+                with: "\"\(failingDitto.path)\" \"$NEW_APP\" \"$CURRENT_APP\""
+            )
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
 
         let process = Process()
