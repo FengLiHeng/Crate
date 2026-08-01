@@ -47,13 +47,17 @@ struct QueuePanelView: View {
                         sectionLabel("正在播放")
                         QueueRow(song: current, isCurrent: true)
 
+                        if hasUpcoming {
+                            sectionLabel("接下来")
+                        }
                         if !manualIds.isEmpty {
-                            sectionLabel("插播 · 下一首播放")
                             ForEach(indexedManualIds, id: \.element) { index, id in
                                 if let song = app.songsById[id] {
                                     QueueRow(
                                         song: song,
                                         isCurrent: false,
+                                        isRecentlyPrioritized: manualIds.first == id
+                                            && app.player.recentlyPrioritizedId == id,
                                         removable: true,
                                         reorderable: true,
                                         isDragging: draggedItem == QueueDragItem(section: .manual, songId: id),
@@ -89,7 +93,6 @@ struct QueuePanelView: View {
                             }
                         }
                         if !upcomingIndices.isEmpty {
-                            sectionLabel("接下来")
                             ForEach(indexedUpcomingIds, id: \.element) { index, id in
                                 if let song = app.songsById[id] {
                                     QueueRow(
@@ -207,6 +210,7 @@ struct QueuePanelView: View {
 private struct QueueRow: View {
     var song: Song
     var isCurrent: Bool
+    var isRecentlyPrioritized = false
     var removable = false
     var reorderable = false
     var isDragging = false
@@ -259,9 +263,25 @@ private struct QueueRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(hovering && !isCurrent ? app.tokens.hover : .clear)
+                .fill(
+                    isRecentlyPrioritized
+                        ? app.tokens.accentSoft
+                        : (hovering && !isCurrent ? app.tokens.hover : .clear)
+                )
         )
-        .scaleEffect(hovering && !isCurrent && !reduceMotion ? 1.006 : 1)
+        .overlay {
+            if isRecentlyPrioritized {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(app.tokens.accent.opacity(0.28), lineWidth: 1)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .scaleEffect(
+            (hovering && !isCurrent || isRecentlyPrioritized) && !reduceMotion
+                ? 1.006
+                : 1
+        )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .gesture(TapGesture(count: 2).onEnded { onPlay?() })
@@ -292,6 +312,7 @@ private struct QueueRow: View {
         }
         .animation(MotionTokens.feedback, value: hovering)
         .animation(MotionTokens.feedback, value: isCurrent)
+        .animation(MotionTokens.feedback, value: isRecentlyPrioritized)
         .animation(MotionTokens.feedback, value: isDragging)
     }
 }

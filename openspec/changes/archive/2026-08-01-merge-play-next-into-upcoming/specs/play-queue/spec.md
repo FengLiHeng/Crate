@@ -1,8 +1,5 @@
-# play-queue Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change local-music-player. Update Purpose after archive.
-## Requirements
 ### Requirement: 插播队列
 应用 SHALL 维护独立于播放上下文的插播队列："添加到下一首播放" SHALL 将歌曲插到队列头部，"添加到待播清单" SHALL 追加到队列尾部，均 toast 确认。待播面板 SHALL 将插播队列与播放上下文中的后续曲目连续呈现在同一“接下来”列表中，插播队列位于列表最前方。插播队列与播放上下文中的后续曲目 SHALL 按歌曲 id 去重，同一首歌 MUST NOT 同时出现在两者中。插播曲目播放完毕后 SHALL 回到原播放上下文继续，不改变上下文位置与顺序。无搜索词时，从【歌曲】视图或具体分组视图发起播放 SHALL 先清空插播队列，再用当前视图完整歌曲集合重建播放上下文。搜索词非空时，双击搜索结果 SHALL 立即播放目标歌曲，保留已有插播队列与后续上下文的相对顺序，并从后续上下文中移除目标歌曲。
 
@@ -68,49 +65,12 @@ TBD - created by archiving change local-music-player. Update Purpose after archi
 - **WHEN** 用户点击待播清单面板的"清空"按钮
 - **THEN** “接下来”列表清空，当前曲目继续播放，当前曲目结束后播放停止
 
-### Requirement: 立即播放不打乱上下文
-通过右键菜单"立即播放"单曲 SHALL 作为插播立即开始播放，不重建播放上下文；该曲目播完后 SHALL 回到原上下文继续，并从原上下文当前位置之后的下一首开始推进。立即播放期间手动点击"下一首"也 SHALL 使用相同回归规则。若原上下文已为空或已到末尾且未开启列表循环，立即播放结束后 SHALL 停止播放。
-
-#### Scenario: 立即播放后回归
-- **WHEN** 在上下文播放中用户对另一首歌选择"立即播放"，且该曲播放完毕
-- **THEN** 继续播放原上下文中（原位置的）下一首
-
-#### Scenario: 立即播放期间点击下一首
-- **WHEN** 在立即播放插播曲期间用户点击"下一首"
-- **THEN** 应用停止当前插播曲，并播放原上下文当前位置之后的下一首
-
-#### Scenario: 无上下文时立即播放结束
-- **WHEN** 用户在没有播放上下文时对某首歌选择"立即播放"，且该曲播放完毕
-- **THEN** 应用停止播放并清空当前曲目
-
 ### Requirement: 清空歌曲列表时重置待播清单
 当用户确认清空歌曲列表时，应用 SHALL 停止当前播放，并清空插播队列、播放上下文和待播清单中的全部残留曲目。清空完成后，待播清单面板 MUST NOT 展示旧歌曲的“正在播放”或“接下来”条目。
 
 #### Scenario: 清空歌曲列表同步清空待播清单
 - **WHEN** 用户确认清空歌曲列表
 - **THEN** 当前播放停止，插播队列为空，播放上下文为空，待播清单不再显示任何旧歌曲
-
-### Requirement: Queue row actions are accessible without pointer hover
-The app SHALL expose play and remove actions for applicable queue rows without requiring pointer hover. Removable rows SHALL keep a stable remove control, and assistive technologies SHALL receive named actions for playing and removing a row.
-
-#### Scenario: VoiceOver plays a queued track
-- **WHEN** a VoiceOver user focuses a queued track and invokes its Play action
-- **THEN** the app starts that queued track using the same queue semantics as a mouse double-click
-
-#### Scenario: Keyboard or VoiceOver removes a manual queue item
-- **WHEN** a removable manual queue row is not pointer-hovered and the user invokes its remove control or named Remove action
-- **THEN** the item is removed from the manual queue
-
-### Requirement: 批量加入待播清单
-应用 SHALL 允许用户将当前选择的多首歌曲按当前可见顺序加入待播清单。批量操作 SHALL 保持现有待播内容的相对顺序，并 MUST 避免歌曲在插播队列或后续上下文中重复出现。
-
-#### Scenario: 多首歌曲加入待播
-- **WHEN** 用户选择多首歌曲并执行“加入待播清单”
-- **THEN** 所选歌曲按当前可见顺序追加到待播清单，既有待播歌曲相对顺序保持不变
-
-#### Scenario: 批量加入时去重
-- **WHEN** 所选歌曲中的一首已存在于插播队列或后续上下文
-- **THEN** 该歌曲在最终待播清单中只出现一次，其他所选歌曲仍按顺序加入
 
 ### Requirement: 待播分区支持重新排序
 应用 SHALL 允许用户在单一“接下来”列表中拖动曲目重新排序；插播队列曲目与播放上下文后续曲目仍 SHALL 分别在各自内部序列中移动，跨内部队列类型拖动 MAY 被拒绝。队列行 SHALL 显示清晰的拖动手柄，并以稳定动画反馈顺序变化。拖动预览 SHALL 使用尺寸稳定且内容清晰的不透明视觉，原列表位置 SHALL 只保留不重复歌曲内容的占位反馈，MUST NOT 因预览与原行叠加产生文字、封面或背景残影。排序后实际下一首播放顺序 SHALL 立即更新，并 SHALL 通过现有播放记忆持久化。排序操作 MUST NOT 改变当前曲目、当前播放上下文位置或播放进度。
@@ -149,10 +109,3 @@ The app SHALL expose play and remove actions for applicable queue rows without r
 #### Scenario: 在内部序列边界调用移动
 - **WHEN** 用户尝试将所属内部队列类型的第一项上移或最后一项下移
 - **THEN** 队列顺序保持不变且应用不会崩溃
-
-### Requirement: 随机模式保留原始顺序
-随机模式下调整“接下来”分区 SHALL 只改变当前随机播放的有效顺序，MUST NOT 改写 `originalIds`；关闭随机模式后 SHALL 恢复调整前由 `originalIds` 记录的原始顺序，并将上下文位置对齐当前曲目。
-
-#### Scenario: 随机模式调整后关闭随机
-- **WHEN** 用户在随机模式中调整后续曲目顺序后关闭随机模式
-- **THEN** 当前随机顺序曾立即生效，但关闭随机后上下文恢复为既有原始顺序且当前曲目保持不变
