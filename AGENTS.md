@@ -6,8 +6,6 @@
 
 - `src/`：应用源码。入口是 `CrateApp.swift`；全局状态、曲库和导入逻辑在 `AppState.swift`；播放相关逻辑在 `PlayerStore.swift` 与 `PlaybackEngine.swift`。
 - `src/Views/`：SwiftUI 页面和可复用视图组件。
-- `openspec/specs/`：当前产品能力规格。
-- `openspec/changes/archive/`：已完成并归档的 OpenSpec 变更。
 - `docs/设计材料/`：设计参考、原始 Web 原型和样式材料。
 - `Scripts/bundle.sh`：本地打包脚本。
 - `build/`：生成产物，不要手动编辑。
@@ -19,8 +17,6 @@
 - `open Crate.xcodeproj`：用 Xcode 打开项目，处理签名、运行和调试。
 - `Scripts/bundle.sh`：按仓库脚本生成本地 app bundle。
 - 完成构建验证后应运行 `Scripts/bundle.sh`，确保最新可测试 app bundle 复制/生成到项目 `build/Crate.app`。
-- `openspec list --json`：查看当前 active changes。
-- `openspec validate <change-name>`：在实现或归档前校验 OpenSpec 变更。
 
 ## Coding Style & Naming Conventions
 
@@ -32,7 +28,7 @@
 
 ## Commit & Pull Request Guidelines
 
-提交信息保持简洁，描述一个逻辑变更。历史中既有 `feat:` 前缀，也有祈使句式，例如 `feat: 本地音乐播放器...`、`Add music import menu`。PR 应包含变更摘要、验证步骤、关联的 OpenSpec change；可见 UI 变更应附截图或录屏。
+提交信息保持简洁，描述一个逻辑变更。历史中既有 `feat:` 前缀，也有祈使句式，例如 `feat: 本地音乐播放器...`、`Add music import menu`。PR 应包含变更摘要、验证步骤；可见 UI 变更应附截图或录屏。
 
 ## GitHub Release 更新说明
 
@@ -46,7 +42,3 @@ GitHub Release 的更新说明面向最终用户，目标是让用户快速理�
 - <新增的用户能力或体验改进>
 - <修复的用户可见问题>
 ```
-
-## OpenSpec Workflow
-
-行为变更应先创建或更新 OpenSpec change，再实现代码。实现完成后，同步 delta specs 到 `openspec/specs/`，准确勾选 `tasks.md`，并将完成的 change 归档到 `openspec/changes/archive/YYYY-MM-DD-<change-name>/`。
